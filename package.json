@@ -1,0 +1,20 @@
+{
+  "name": "livepaper",
+  "version": "0.1.0",
+  "description": "Write one Markdown file, get a paged interactive live paper (HTML) and a LaTeX PDF.",
+  "type": "module",
+  "bin": {
+    "livepaper": "bin/livepaper.mjs"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "katex": "^0.16.22",
+    "playwright-core": "^1.54.2"
+  }
+}

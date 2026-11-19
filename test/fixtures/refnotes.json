@@ -1,0 +1,29 @@
+[
+  {
+    "id": "full",
+    "type": "article-journal",
+    "title": "An entry with both notes",
+    "author": [{ "family": "Doe", "given": "A." }],
+    "container-title": "Journal of Tests",
+    "issued": { "date-parts": [[2020]] },
+    "x-summary": "Short *summary* with $x^2$.",
+    "abstract": "The full abstract, first paragraph.\n\nSecond paragraph with $y_1$."
+  },
+  {
+    "id": "sumonly",
+    "type": "book",
+    "title": "An entry with a summary only",
+    "author": [{ "family": "Roe", "given": "B." }],
+    "publisher": "Test Press",
+    "issued": { "date-parts": [[2021]] },
+    "x-summary": "Only a summary."
+  },
+  {
+    "id": "plain",
+    "type": "article-journal",
+    "title": "An entry without notes",
+    "author": [{ "family": "Poe", "given": "C." }],
+    "container-title": "Journal of Tests",
+    "issued": { "date-parts": [[2022]] }
+  }
+]

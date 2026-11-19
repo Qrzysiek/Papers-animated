@@ -1,0 +1,5 @@
+node_modules/
+test/.out/
+**/build/
+test/fixtures/dist/
+examples/demo/dist/

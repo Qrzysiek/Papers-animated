@@ -1,0 +1,379 @@
+/* livepaper runtime — ui: boot, reader bar, zoom, modes, theme, links, tooltips, report. */
+(function (LP) {
+'use strict';
+const $ = id => document.getElementById(id);
+const html = document.documentElement;
+const qs = LP.qs;
+const player = LP.player;
+let mode = 'paper', layout = null, pagesEl = null, pageIO = null, curPage = 0, readyResolve;
+LP.ready = new Promise(r => { readyResolve = r; });
+
+/* ---------------------------------------------------------------- theme */
+function applyTheme(v) {
+  if (v === 'light' || v === 'dark') html.setAttribute('data-theme', v); else html.removeAttribute('data-theme');
+  const sel = $('lp-theme'); if (sel) sel.value = v || 'auto';
+}
+
+/* ---------------------------------------------------------------- zoom */
+function applyZoom() {
+  if (!pagesEl) return;
+  if (html.classList.contains('bare')) { pagesEl.style.zoom = 1; return; }
+  const z0 = $('lp-zoom') ? $('lp-zoom').value : 'width';
+  const stage = $('lp-stage');
+  const cs = getComputedStyle(stage);
+  const avail = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const zw = avail / 900;
+  const barH = $('lp-bar') ? $('lp-bar').offsetHeight : 0;
+  const zp = (innerHeight - barH - 40) / 1200;
+  const z = z0 === '1' ? 1 : z0 === 'page' ? Math.min(zw, zp) : Math.min(zw, 1.75);
+  pagesEl.style.zoom = Math.max(0.3, z).toFixed(3);
+}
+
+/* ---------------------------------------------------------------- render a mode */
+/* Fonts are only requested once text using them is laid out, and the paper's text lives in a <template>
+   until now; so stage it, let the browser fetch the faces it needs (KaTeX's included), then measure. */
+function fontsSettled(ms = 3000) {
+  try {
+    ['KaTeX_Main', 'KaTeX_Math', 'KaTeX_AMS', 'KaTeX_Size1', 'KaTeX_Size2', 'KaTeX_Size3', 'KaTeX_Size4'].forEach(f => document.fonts.load('16px ' + f));
+    ['italic 16px KaTeX_Math', 'bold 16px KaTeX_Main', 'italic 16px KaTeX_Main'].forEach(f => document.fonts.load(f));
+    return Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, ms))]);
+  } catch (e) { return Promise.resolve(); }
+}
+let renderToken = 0;
+async function render(m) {
+  const token = ++renderToken;
+  mode = m;
+  player.reset();
+  if (pageIO) { pageIO.disconnect(); pageIO = null; }
+  const stage = $('lp-stage');
+  const src = LP.readSource($('lp-src'));
+  let insts;
+  if (mode === 'paper') {
+    // stage everything off-screen, wait for its fonts, mount live figures, then paginate
+    const staging = document.createElement('div');
+    staging.className = 'lp-staging flowtext';
+    document.body.appendChild(staging);
+    if (src.mast) staging.appendChild(src.mast);
+    src.blocks.forEach(b => staging.appendChild(b));
+    void staging.offsetHeight;
+    await fontsSettled();
+    if (token !== renderToken) { staging.remove(); return; }
+    stage.textContent = '';
+    insts = Array.from(staging.querySelectorAll('figure[data-live]')).map(f => LP.mountFigure(f)).filter(Boolean);
+    staging.remove();   // detached: moving blocks out of it no longer triggers document layout
+    pagesEl = document.createElement('div');
+    pagesEl.className = 'lp-pages';
+    pagesEl.style.zoom = 1;
+    stage.appendChild(pagesEl);
+    layout = LP.layoutPaper(src, pagesEl);
+  } else {
+    stage.textContent = '';
+    pagesEl = null;
+    layout = LP.layoutReflow(src, stage);
+    insts = Array.from(stage.querySelectorAll('figure[data-live]')).map(f => LP.mountFigure(f)).filter(Boolean);
+  }
+  LP.instances = insts;
+  player.build(stage, insts);
+  qs.has('scene') && fixScene(qs.get('scene'), +(qs.get('step') || 1));
+  player.renderAllRest();
+  applyZoom();
+  watchPages();
+  const mb = $('lp-mode');
+  if (mb) { mb.textContent = mode === 'paper' ? 'Reflow' : 'Pages'; mb.setAttribute('aria-pressed', 'false'); }
+  document.querySelectorAll('.paper-only').forEach(e => { e.hidden = mode !== 'paper'; });
+  const bar = $('lp-bar'); if (bar) bar.classList.toggle('reflow', mode !== 'paper');
+  updateBar(player.info());
+}
+function fixScene(id, step) {
+  const sc = player.scenes.get(id);
+  if (sc) sc.fixed = Math.max(0, step - 1);
+}
+
+/* ---------------------------------------------------------------- pages */
+function sheets() { return pagesEl ? Array.from(pagesEl.querySelectorAll(':scope > .sheet')) : []; }
+function watchPages() {
+  const ss = sheets();
+  const pg = $('lp-pg');
+  if (!ss.length) { if (pg) pg.textContent = ''; return; }
+  const vis = new Map();
+  pageIO = new IntersectionObserver(es => {
+    es.forEach(e => vis.set(e.target, e.intersectionRatio));
+    let best = 0, bv = -1;
+    ss.forEach((s, i) => { const v = vis.get(s) || 0; if (v > bv) { bv = v; best = i; } });
+    curPage = best;
+    if (pg) pg.textContent = 'page ' + (best + 1) + ' / ' + ss.length;
+  }, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
+  ss.forEach(s => pageIO.observe(s));
+  if (pg) pg.textContent = 'page 1 / ' + ss.length;
+}
+function gotoPage(i) {
+  const ss = sheets();
+  if (!ss.length) { window.scrollBy({ top: (i > curPage ? 1 : -1) * innerHeight * 0.85, behavior: 'smooth' }); return; }
+  i = Math.max(0, Math.min(ss.length - 1, i));
+  ss[i].scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+/* ---------------------------------------------------------------- bar */
+function updateBar(info) {
+  const bar = $('lp-bar');
+  if (!bar) return;
+  bar.classList.toggle('noscene', !info);
+  if (!info) return;
+  $('lp-play').textContent = info.playing ? 'Pause' : 'Play';
+  const sc = $('lp-scrub');
+  sc.max = String(info.n - 1);
+  if (document.activeElement !== sc) sc.value = String(info.k);
+  $('lp-where').textContent = info.title + ' · ' + (info.k + 1) + '/' + info.n + (info.label ? ': ' + info.label : '');
+}
+/* series menu: links to the other notes of a series (new tab), the current one marked */
+function seriesMenu() {
+  const S = LP.series;
+  if (!S || !S.notes || Object.keys(S.notes).length < 2 || !$('lp-mode')) return;
+  const d = document.createElement('details');
+  d.className = 'lp-series';
+  const sum = document.createElement('summary');
+  sum.textContent = 'Notes';
+  sum.title = S.title ? 'Other notes in “' + S.title + '”' : 'Other notes in this series';
+  const nav = document.createElement('nav');
+  nav.setAttribute('aria-label', 'Notes in this series');
+  if (S.title) { const h = document.createElement('span'); h.className = 'hd'; h.textContent = S.title; nav.appendChild(h); }
+  Object.entries(S.notes).forEach(([id, n]) => {
+    let e;
+    if (id === S.self) { e = document.createElement('span'); e.className = 'cur'; e.textContent = n.title + ' (this note)'; }
+    else if (n.href) { e = document.createElement('a'); e.href = n.href; e.target = '_blank'; e.rel = 'noopener'; e.textContent = n.title + ' ↗'; }
+    else { e = document.createElement('span'); e.className = 'planned'; e.textContent = n.title + ' · planned'; }
+    nav.appendChild(e);
+  });
+  d.append(sum, nav);
+  $('lp-mode').parentNode.insertBefore(d, $('lp-mode'));
+  document.addEventListener('click', e => { if (!d.contains(e.target)) d.open = false; });
+}
+
+function wireBar() {
+  seriesMenu();
+  const on = (id, ev, fn) => { const e = $(id); if (e) e.addEventListener(ev, fn); };
+  on('lp-play', 'click', () => player.toggle());
+  on('lp-prev', 'click', () => player.step(-1));
+  on('lp-next', 'click', () => player.step(1));
+  on('lp-scrub', 'input', e => player.goto(+e.target.value));
+  on('lp-speed', 'change', e => { player.speed = +e.target.value; });
+  on('lp-zoom', 'change', applyZoom);
+  on('lp-pprev', 'click', () => gotoPage(curPage - 1));
+  on('lp-pnext', 'click', () => gotoPage(curPage + 1));
+  on('lp-theme', 'change', e => { applyTheme(e.target.value); LP.store.set('theme', e.target.value); });
+  on('lp-mode', 'click', () => { const m = mode === 'paper' ? 'reflow' : 'paper'; LP.store.set('mode', m); render(m); });
+  let inFrame = true;
+  try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
+  const pb = $('lp-print');
+  if (pb && !inFrame) { pb.hidden = false; pb.addEventListener('click', () => { (mode !== 'paper' ? render('paper') : Promise.resolve()).then(() => setTimeout(() => window.print(), 50)); }); }
+  player.on(updateBar);
+  addEventListener('keydown', e => {
+    if (e.target instanceof Element && e.target.matches('input,select,textarea,button')) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.code === 'Space' && player.active) { e.preventDefault(); player.toggle(); }
+    else if (e.key === 'ArrowRight' && player.active) { e.preventDefault(); player.step(1); }
+    else if (e.key === 'ArrowLeft' && player.active) { e.preventDefault(); player.step(-1); }
+    else if ((e.key === 'PageDown' || e.key === ']') && mode === 'paper') { e.preventDefault(); gotoPage(curPage + 1); }
+    else if ((e.key === 'PageUp' || e.key === '[') && mode === 'paper') { e.preventDefault(); gotoPage(curPage - 1); }
+  });
+  let rz = 0;
+  addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(applyZoom, 80); });
+  addEventListener('beforeprint', () => { player.static = true; player.renderAllRest(); });
+  addEventListener('afterprint', () => { player.static = qs.has('static'); });
+  addEventListener('hashchange', () => jumpTo(decodeURIComponent(location.hash.slice(1)), false));
+}
+
+/* ---------------------------------------------------------------- links and tooltips */
+function findIn(stage, id) {
+  if (!id) return null;
+  try { return stage.querySelector('#' + CSS.escape(id)); } catch (e) { return null; }
+}
+function jumpTo(id, setHash) {
+  const t = findIn($('lp-stage'), id);
+  if (!t) return false;
+  t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  t.classList.remove('lp-flash'); void t.offsetWidth; t.classList.add('lp-flash');
+  if (setHash) { try { history.replaceState(null, '', '#' + id); } catch (e) { /* not allowed here */ } }
+  return true;
+}
+function tipContent(a) {
+  const stage = $('lp-stage');
+  const href = a.getAttribute('href') || '';
+  const id = a.dataset.ref || href.slice(1);
+  const t = findIn(stage, id);
+  if (!t) return null;
+  const box = document.createElement('div');
+  if (t.classList.contains('eq')) box.appendChild(t.cloneNode(true));
+  else if (t.matches('figure')) { const c = t.querySelector('figcaption'); if (c) box.appendChild(c.cloneNode(true)); }
+  else if (t.classList.contains('lp-tbl')) { const c = t.querySelector('.tcap'); if (c) box.appendChild(c.cloneNode(true)); }
+  else if (t.classList.contains('algo')) { const c = t.querySelector('.hd'); if (c) box.appendChild(c.cloneNode(true)); }
+  else if (t.classList.contains('lp-env')) { const c = t.querySelector('p'); if (c) box.appendChild(c.cloneNode(true)); }
+  else if (t.classList.contains('csl-entry')) { const c = t.querySelector('.csl-right-inline') || t; box.appendChild(c.cloneNode(true)); }
+  else if (t.classList.contains('fn')) { const c = t.cloneNode(true); const s = c.querySelector('sup'); if (s) s.remove(); box.appendChild(c); }
+  else if (/^H[2-6]$/.test(t.tagName)) { box.textContent = t.textContent; }
+  else return null;
+  box.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+  return box;
+}
+function wireLinks() {
+  const stage = $('lp-stage');
+  const tip = document.createElement('div');
+  tip.className = 'lp-tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  stage.addEventListener('click', e => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const id = decodeURIComponent(a.getAttribute('href').slice(1));
+    if (jumpTo(id, true)) e.preventDefault();
+  });
+  const place = (r, center) => {
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = Math.min(innerWidth - tw - 12, Math.max(12, center ? r.left + r.width / 2 - tw / 2 : r.left));
+    let y = r.bottom + 8;
+    if (y + th > innerHeight - 8) y = r.top - th - 8;
+    tip.style.left = x + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  };
+  // reference notes (filters/refnotes.lua): a bibliography entry with a hidden div.ref-abs shows it as a tooltip
+  let absEntry = null;
+  const showAbstract = ent => {
+    const abs = ent.querySelector('.ref-abs');
+    if (!abs) return false;
+    const box = document.createElement('div');
+    const hd = document.createElement('div'); hd.className = 'tip-hd'; hd.textContent = 'Abstract';
+    box.appendChild(hd);
+    Array.from(abs.childNodes).forEach(n => box.appendChild(n.cloneNode(true)));
+    box.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+    tip.replaceChildren(box);
+    tip.classList.add('lp-tip-abs');
+    tip.hidden = false;
+    place(ent.getBoundingClientRect(), false);
+    absEntry = ent;
+    return true;
+  };
+  stage.addEventListener('mouseover', e => {
+    const a = e.target.closest('a.xref, .citation a, a.footnote-ref');
+    if (!a) {
+      const ent = e.target.closest('.csl-entry');
+      if (ent && ent !== absEntry && !e.target.closest('a')) showAbstract(ent);
+      return;
+    }
+    const c = tipContent(a);
+    if (!c) return;
+    tip.replaceChildren(c);
+    tip.classList.remove('lp-tip-abs');
+    absEntry = null;
+    tip.hidden = false;
+    place(a.getBoundingClientRect(), true);
+  });
+  stage.addEventListener('mouseout', e => {
+    if (e.target.closest('a.xref, .citation a, a.footnote-ref')) tip.hidden = true;
+    const ent = e.target.closest('.csl-entry');
+    if (ent && ent === absEntry && !ent.contains(e.relatedTarget)) { tip.hidden = true; absEntry = null; }
+  });
+  // touch: a tap on an entry shows its abstract, a second tap or a tap elsewhere closes it
+  stage.addEventListener('click', e => {
+    const ent = e.target.closest('.csl-entry');
+    if (!ent || e.target.closest('a')) { if (absEntry && !ent) { tip.hidden = true; absEntry = null; } return; }
+    if (absEntry === ent && !tip.hidden && e.pointerType && e.pointerType !== 'mouse') { tip.hidden = true; absEntry = null; return; }
+    showAbstract(ent);
+  });
+  addEventListener('scroll', () => { tip.hidden = true; absEntry = null; }, { passive: true });
+}
+
+/* ---------------------------------------------------------------- report (used by `livepaper check`) */
+LP.report = () => {
+  const stage = $('lp-stage');
+  const pageOf = e => { const s = e.closest('.sheet'); return s ? sheets().indexOf(s) + 1 : 0; };
+  const wide = [];
+  stage.querySelectorAll('.eq .katex-display, .eq > .math').forEach(d => {
+    if (d.scrollWidth > d.clientWidth + 1) wide.push({ page: pageOf(d), id: (d.closest('.eq') || {}).id || '', excess: d.scrollWidth - d.clientWidth });
+  });
+  const widthOverflow = [];
+  stage.querySelectorAll('.col-body > *, .band > *').forEach(b => {
+    if (b.scrollWidth > b.clientWidth + 2 && !b.classList.contains('eq')) widthOverflow.push({ page: pageOf(b), tag: b.tagName, cls: b.className, text: b.textContent.trim().slice(0, 60), excess: b.scrollWidth - b.clientWidth });
+  });
+  const stranded = [];
+  stage.querySelectorAll('.col-body').forEach(cb => {
+    const last = cb.lastElementChild;
+    if (last && /^H[2-6]$/.test(last.tagName)) stranded.push({ page: pageOf(cb), text: last.textContent.trim().slice(0, 60) });
+  });
+  const liveOverflow = [];
+  stage.querySelectorAll('.col').forEach(c => {
+    const used = c.firstChild.offsetHeight + c.lastChild.offsetHeight;
+    if (used > c.clientHeight + 1) liveOverflow.push({ page: pageOf(c), col: c === c.parentNode.firstChild ? 1 : 2, why: 'column content taller than the column', tag: '', cls: '', text: (c.firstChild.lastElementChild || c).textContent.trim().slice(0, 60), excess: used - c.clientHeight });
+  });
+  return {
+    mode, pages: sheets().length, ms: layout && layout.ms, stats: layout && layout.stats, overflows: ((layout && layout.overflows) || []).concat(liveOverflow),
+    wideEquations: wide, widthOverflow, stranded,
+    missingRefs: Array.from(stage.querySelectorAll('.xref-missing')).map(e => e.textContent),
+    katexErrors: Array.from(stage.querySelectorAll('.katex-error')).map(e => e.getAttribute('title') || e.textContent),
+    figures: (LP.instances || []).length,
+    missingFigures: Array.from(stage.querySelectorAll('.lp-missing')).map(e => e.textContent),
+    scenes: Array.from(player.scenes.values()).map(s => ({ id: s.id, steps: s.steps.length, figs: s.figs.length, els: s.els.length })),
+    errors: LP.errors.slice(),
+  };
+};
+
+/* ---------------------------------------------------------------- bare figure mode (snapshots) */
+function bareFigure(name, step) {
+  html.classList.add('bare-fig', 'static');
+  player.static = true;
+  const src = LP.readSource($('lp-src'));
+  const stage = $('lp-stage');
+  stage.textContent = '';
+  let fig = null;
+  src.frag.querySelectorAll('figure[data-live]').forEach(f => { if (!fig && (f.dataset.live === name || f.id === name)) fig = f; });
+  if (!fig) { LP.err('no figure ' + name); return; }
+  const holder = document.createElement('div');
+  holder.className = 'flowtext lp-bare';
+  const wide = fig.classList.contains('wide') || fig.classList.contains('full');
+  holder.style.width = (wide ? 788 : 380.5) + 12 + 'px';
+  holder.appendChild(fig);
+  stage.appendChild(holder);
+  const inst = LP.mountFigure(fig, { bare: true });
+  if (!inst) return;
+  const n = Math.max(1, (inst.def.steps || []).length, (LP.data.scenes.find(s => s.id === fig.dataset.scene) || { steps: [] }).steps.length);
+  const k = Math.min(n, Math.max(1, step || +fig.dataset.snap || inst.def.snap || n)) - 1;
+  LP.frameInstance(inst, { t: (k + 1) * 2.2, k, step: k + 1, frac: 1, n, playing: false, rest: true, scene: fig.dataset.scene || '' });
+  LP.kit.relayoutTex(stage);
+}
+
+/* ---------------------------------------------------------------- boot */
+async function boot() {
+  applyTheme(qs.get('theme') || LP.store.get('theme', 'auto'));
+  if (qs.has('static')) { html.classList.add('static'); player.static = true; player.autoplay = false; }
+  if (qs.has('bare')) html.classList.add('bare');
+  try { await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2500))]); } catch (e) { /* fonts API missing */ }
+  if (qs.has('fig')) { bareFigure(qs.get('fig'), +(qs.get('step') || 0)); window.LP_READY = true; readyResolve(); return; }
+  wireBar();
+  wireLinks();
+  const narrow = innerWidth < 720;
+  const m = qs.get('mode') || LP.store.get('mode', narrow ? 'reflow' : 'paper');
+  await render(m === 'reflow' ? 'reflow' : 'paper');
+  LP.kit.relayoutTex($('lp-stage'));
+  watchLateFonts();
+  player.start();
+  if (location.hash.length > 1) setTimeout(() => jumpTo(decodeURIComponent(location.hash.slice(1)), false), 60);
+  window.LP_READY = true;
+  readyResolve();
+}
+LP.render = render;
+/* if a web font arrives after layout and makes a column overflow, typeset again (keeping the page) */
+function watchLateFonts() {
+  if (!document.fonts || !document.fonts.addEventListener) return;
+  let t = 0;
+  document.fonts.addEventListener('loadingdone', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (mode !== 'paper') return;
+      const bad = Array.from(document.querySelectorAll('#lp-stage .col')).some(c => c.firstChild.offsetHeight + c.lastChild.offsetHeight > c.clientHeight + 1);
+      if (!bad) return;
+      const page = curPage;
+      render('paper').then(() => { const ss = sheets(); if (ss[page]) ss[page].scrollIntoView({ block: 'start' }); });
+    }, 150);
+  });
+}
+/* for figure modules: scroll to an element of the paper by id (e.g. a section), with a flash */
+LP.jump = id => jumpTo(id, true);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})(window.LP);

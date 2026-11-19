@@ -1,0 +1,57 @@
+<title>$if(pagetitle)$$pagetitle$$else$$title$$endif$</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="$if(description)$$description$$else$$subtitle$$endif$">
+<!--LP:FONTS-->
+<style>
+<!--LP:CSS-->
+</style>
+<!--LP:SPLIT-->
+<div class="lp-bar noscene" id="lp-bar" role="toolbar" aria-label="Reader controls">
+  <div class="grp paper-nav">
+    <button id="lp-pprev" title="Previous page (PageUp)" aria-label="Previous page">&#9664;&#xFE0E;</button>
+    <span class="pg" id="lp-pg" aria-live="off">page 1</span>
+    <button id="lp-pnext" title="Next page (PageDown)" aria-label="Next page">&#9654;&#xFE0E;</button>
+  </div>
+  <span class="sep paper-nav"></span>
+  <div class="grp scene-only">
+    <button id="lp-prev" title="Previous step (Left arrow)" aria-label="Previous step">&#9664;&#xFE0E; step</button>
+    <button id="lp-play" title="Play or pause (Space)">Play</button>
+    <button id="lp-next" title="Next step (Right arrow)" aria-label="Next step">step &#9654;&#xFE0E;</button>
+    <input id="lp-scrub" type="range" min="0" max="1" step="1" value="0" aria-label="Step in the active animation">
+    <span class="where" id="lp-where"></span>
+    <label class="dim speed">speed
+      <select id="lp-speed"><option value="0.5">0.5&times;</option><option value="1" selected>1&times;</option><option value="2">2&times;</option></select>
+    </label>
+  </div>
+  <span class="grow"></span>
+  <div class="grp">
+    <label class="dim paper-only">zoom
+      <select id="lp-zoom"><option value="width" selected>fit width</option><option value="page">fit page</option><option value="1">100%</option></select>
+    </label>
+    <button id="lp-mode" title="Switch between paged sheets and a single reflowing column">Reflow</button>
+    <select id="lp-theme" aria-label="Colour theme"><option value="auto" selected>auto</option><option value="light">light</option><option value="dark">dark</option></select>
+    <button id="lp-print" title="Print or save as PDF" hidden>Print</button>
+  </div>
+</div>
+<main class="lp-stage" id="lp-stage"><div class="lp-busy" id="lp-busy">Typesetting&hellip;</div></main>
+<template id="lp-src">
+  <div class="lp-meta" data-k="runhead">$if(runhead)$$runhead$$else$$title$$endif$</div>
+  <div class="lp-meta" data-k="topics">$if(topics)$$topics$$endif$</div>
+  <div class="lp-meta" data-k="footer-left">$if(footer-left)$$footer-left$$else$$if(runhead)$$runhead$$else$$title$$endif$$endif$</div>
+  <div class="lp-meta" data-k="footer-right">$if(footer-right)$$footer-right$$else$$for(author)$$author$$sep$ &middot; $endfor$$endif$</div>
+  <header class="mast">
+    <h1 class="title">$title$</h1>
+$if(subtitle)$    <p class="sub">$subtitle$</p>
+$endif$
+    <p class="by">$for(author)$$author$$sep$ &middot; $endfor$$if(date)$ &middot; $date$$endif$</p>
+$if(abstract)$    <section class="abs">$abstract$</section>
+$endif$
+$if(keywords)$    <p class="idx"><b>Index Terms:</b> $for(keywords)$$keywords$$sep$, $endfor$</p>
+$endif$
+    <hr>
+  </header>
+  <div class="lp-flow">
+$body$
+  </div>
+</template>
+<!--LP:JS-->

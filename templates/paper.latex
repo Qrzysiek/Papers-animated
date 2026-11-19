@@ -1,0 +1,157 @@
+% livepaper LaTeX template — two-column sheet look matching the live HTML paper.
+\documentclass[10pt,twocolumn,$if(papersize)$$papersize$paper$else$a4paper$endif$]{article}
+\usepackage[top=19mm,bottom=21mm,left=16mm,right=16mm,columnsep=7mm,headsep=5mm,footskip=9mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,mathtools}
+\usepackage{amsthm}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage{bm}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{array,booktabs,tabularx}
+\usepackage{float}
+\usepackage[font=small,labelfont=bf,labelsep=period,skip=4pt]{caption}
+\captionsetup[table]{position=top}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{etoolbox}
+\usepackage{calc}
+\usepackage[final]{microtype}
+\usepackage[hidelinks,unicode]{hyperref}
+\usepackage{xurl}
+
+\setlength{\emergencystretch}{3em}
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\newcommand{\passthrough}[1]{#1}
+\setlist{nosep,leftmargin=1.4em}
+\raggedbottom
+
+% live-only markup is a no-op on paper
+\providecommand{\htmlClass}[2]{#2}
+\providecommand{\htmlId}[2]{#2}
+\providecommand{\htmlData}[2]{#2}
+\providecommand{\htmlStyle}[2]{#2}
+
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{%
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi}
+\makeatother
+
+% ---------------------------------------------------------------- headings
+\titleformat{\section}{\normalfont\bfseries\scshape\large}%
+  {\colorbox{black}{\makebox[1.05em]{\color{white}\upshape\bfseries\normalsize\thesection}}}{0.55em}{}
+\titleformat{name=\section,numberless}{\normalfont\bfseries\scshape\large}{}{0pt}{}
+\titlespacing*{\section}{0pt}{2.2ex plus .6ex minus .3ex}{1.1ex plus .2ex}
+\titleformat{\subsection}{\normalfont\itshape\normalsize}{\upshape\thesubsection}{0.5em}{}
+\titlespacing*{\subsection}{0pt}{1.6ex plus .5ex minus .2ex}{0.6ex plus .2ex}
+\titleformat{\subsubsection}[runin]{\normalfont\itshape}{\thesubsubsection}{0.4em}{}[.]
+\titlespacing*{\subsubsection}{0pt}{1.2ex plus .4ex}{0.6em}
+
+% ---------------------------------------------------------------- page style
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape $if(runhead)$$runhead$$else$$title$$endif$}
+\fancyhead[R]{\scriptsize\scshape $if(topics)$$topics$$endif$}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.7pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% ---------------------------------------------------------------- environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{claim}[theorem]{Claim}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+\floatstyle{ruled}
+\newfloat{algorithm}{tbp}{loa}
+\floatname{algorithm}{Algorithm}
+\newenvironment{lpalgo}{\begin{list}{}{\setlength{\leftmargin}{1.9em}\setlength{\labelwidth}{1.4em}%
+  \setlength{\labelsep}{0.5em}\setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}\setlength{\topsep}{3pt}}\small}%
+  {\end{list}}
+\newcommand{\lpln}[1]{{\scriptsize\color{gray}#1}}
+\newcommand{\lpinv}[1]{{\setlength{\fboxsep}{1.5pt}\colorbox{black}{\color{white}#1}}}
+
+\newsavebox{\lpboxbin}
+\newenvironment{lptake}[1]{\def\lpboxtitle{#1}\begin{lrbox}{\lpboxbin}%
+  \begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}\raggedright\bfseries\itshape\large}%
+  {\end{minipage}\end{lrbox}\par\medskip\noindent
+  \setlength{\fboxrule}{0.9pt}\fcolorbox{black}{black!4}{\begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}%
+  {\footnotesize\scshape\lpboxtitle}\par\smallskip\usebox{\lpboxbin}\end{minipage}}\par\medskip}
+\newenvironment{lpbox}[1]{\def\lpboxtitle{#1}\begin{lrbox}{\lpboxbin}%
+  \begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}\small}%
+  {\end{minipage}\end{lrbox}\par\medskip\noindent
+  \setlength{\fboxrule}{0.6pt}\fcolorbox{black}{black!3}{\begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}%
+  \ifx\lpboxtitle\empty\else{\footnotesize\scshape\lpboxtitle}\par\smallskip\fi\usebox{\lpboxbin}\end{minipage}}\par\medskip}
+
+% ---------------------------------------------------------------- citeproc
+\NewDocumentCommand\citeproctext{}{}
+\NewDocumentCommand\citeproc{mm}{\begingroup\def\citeproctext{#2}\cite{#1}\endgroup}
+\makeatletter
+ \let\@cite@ofmt\@firstofone
+ \def\@biblabel#1{}
+ \def\@cite#1#2{{#1\if@tempswa , #2\fi}}
+\makeatother
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{2.6em}
+\newenvironment{CSLReferences}[2]
+ {\begin{list}{}{\setlength{\itemindent}{0pt}\setlength{\leftmargin}{0pt}\setlength{\parsep}{0pt}%
+  \ifodd #1 \setlength{\leftmargin}{\cslhangindent}\setlength{\itemindent}{-1\cslhangindent}\fi
+  \setlength{\itemsep}{#2\baselineskip}}\footnotesize}
+ {\end{list}}
+\newcommand{\CSLBlock}[1]{\hfill\break\parbox[t]{\linewidth}{\strut\ignorespaces#1\strut}}
+\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{\strut#1\strut}}
+\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{\strut#1\strut}}
+\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+
+% ---------------------------------------------------------------- user macros
+$for(lp-latex-macros)$
+$lp-latex-macros$
+$endfor$
+$for(header-includes)$
+$header-includes$
+$endfor$
+
+\hypersetup{pdftitle={$pagetitle$},pdfauthor={$for(author)$$author$$sep$; $endfor$}}
+
+\begin{document}
+\twocolumn[{%
+  \begin{center}
+  {\fontsize{24}{27}\selectfont\bfseries $title$\par}
+  $if(subtitle)$\vspace{4pt}{\large\itshape $subtitle$\par}$endif$
+  \vspace{6pt}{\small\color{black!70} $for(author)$$author$$sep$ \textperiodcentered{} $endfor$$if(date)$ \textperiodcentered{} $date$$endif$\par}
+  \end{center}
+  $if(abstract)$
+  \vspace{2pt}
+  \begin{minipage}{\textwidth}\centering
+  \begin{minipage}{0.86\textwidth}\small
+  \textbf{\textit{Abstract.}} $abstract$
+  $if(keywords)$\par\vspace{3pt}{\footnotesize\itshape\textbf{Index Terms:} $for(keywords)$$keywords$$sep$, $endfor$}$endif$
+  \end{minipage}\end{minipage}
+  $endif$
+  \par\vspace{8pt}\noindent\rule{\textwidth}{0.4pt}\par\vspace{10pt}
+}]
+\thispagestyle{fancy}
+
+$body$
+
+\end{document}
