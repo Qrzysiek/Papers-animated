@@ -91,7 +91,7 @@ A CSL-JSON bibliography item may carry two extra fields:
 - `"x-summary"`: a short summary, at most two or three lines (Pandoc Markdown, `$...$` math allowed). It is printed in small italics under the entry, in the HTML and in the PDF.
 - `"abstract"`: the full abstract (Pandoc Markdown). In the HTML it is shown as a tooltip when the reader hovers over or taps the entry. Entries with a summary but no abstract show "No abstract is published for this work."
 
-Hovering a citation `[n]` in the text shows the entry together with its summary. The filter `filters/refnotes.lua` runs after `--citeproc` and does nothing for items without these fields. Escape Markdown in abstracts taken from arXiv, keeping only `$...$` live; the Nielsen project's `scripts/make_bib.py` (`md_abstract`) shows one way.
+Hovering a citation `[n]` in the text shows the entry together with its summary. On a touch screen, which has no hover, the first tap on a citation, cross-reference or footnote mark shows the same preview, and tapping the preview (or the link again) goes there. A tap on an entry opens or closes its abstract, and a tap elsewhere or scrolling closes it. Hover reacts only to pointer events of type `mouse`, because a tap also sends emulated mouse events; the test `tooltips: taps on a touch screen…` guards this. The filter `filters/refnotes.lua` runs after `--citeproc` and does nothing for items without these fields. Escape Markdown in abstracts taken from arXiv, keeping only `$...$` live; the Nielsen project's `scripts/make_bib.py` (`md_abstract`) shows one way.
 
 ### Scenes: text that follows a figure
 
@@ -182,7 +182,7 @@ Publish `dist/artifact.html`: it has no document skeleton, and fonts, KaTeX and 
   - it turns fenced divs into HTML structures or LaTeX environments;
   - it tags scene elements, and collects scenes, macros and labels into a JSON block.
 - `src/build.mjs` runs pandoc and prerenders all math with KaTeX. It inlines CSS, fonts, runtime and figure modules into one file, and drives `latexmk`.
-- `runtime/paginate.js` flows the article into fixed sheets. Paragraphs split at word boundaries (KaTeX stays atomic), and lists, environments and reference lists split between items. Figures, tables and algorithms float to the next column. Wide items go to a band at the top of the next page, full figures get their own page, and footnotes go to the foot of their column. Columns are absolutely positioned with CSS containment, so each measurement only re-lays-out one column: a 14-page paper paginates in about 0.2 s.
+- `runtime/paginate.js` flows the article into fixed sheets. Paragraphs split at word boundaries (KaTeX stays atomic), and lists, environments and reference lists split between items. Figures, tables and algorithms float to the next column. Wide items go to a band at the top of the next page, full figures get their own page, and footnotes go to the foot of their column. Columns are absolutely positioned with CSS containment, so each measurement only re-lays-out one column: a 14-page paper paginates in about 0.2 s. Pages are typeset at the zoom they are shown at, because text breaks into lines slightly differently at other zooms; a resize or zoom change that makes a column overflow typesets again, and printing typesets at zoom 1.
 - `runtime/player.js` gives each scene its own clock; `runtime/ui.js` handles the toolbar, zoom, modes, theme, links, tooltips and the report used by `check`.
 
 ## Tests

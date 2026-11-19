@@ -15,9 +15,12 @@ function applyTheme(v) {
 }
 
 /* ---------------------------------------------------------------- zoom */
-function applyZoom() {
-  if (!pagesEl) return;
-  if (html.classList.contains('bare')) { pagesEl.style.zoom = 1; return; }
+/* Pages are typeset at the zoom they are shown at. Text laid out at another zoom can break into different
+   lines (glyph advances do not scale exactly with the font size), so a column measured to fit at zoom 1
+   could overflow its sheet at the display zoom and cut off its last line. */
+let layoutZoom = 1, printing = false, refitT = 0;
+function targetZoom() {
+  if (printing || html.classList.contains('bare')) return 1;
   const z0 = $('lp-zoom') ? $('lp-zoom').value : 'width';
   const stage = $('lp-stage');
   const cs = getComputedStyle(stage);
@@ -26,7 +29,24 @@ function applyZoom() {
   const barH = $('lp-bar') ? $('lp-bar').offsetHeight : 0;
   const zp = (innerHeight - barH - 40) / 1200;
   const z = z0 === '1' ? 1 : z0 === 'page' ? Math.min(zw, zp) : Math.min(zw, 1.75);
-  pagesEl.style.zoom = Math.max(0.3, z).toFixed(3);
+  return +Math.max(0.3, z).toFixed(3);
+}
+function applyZoom() {
+  if (!pagesEl) return;
+  const z = targetZoom();
+  pagesEl.style.zoom = z;
+  // typeset again if the new zoom makes a column overflow (keeping the page)
+  if (mode === 'paper' && z !== layoutZoom) {
+    clearTimeout(refitT);
+    refitT = setTimeout(() => { if (mode === 'paper' && columnsOverflow()) repaginate(); }, 200);
+  }
+}
+function columnsOverflow() {
+  return Array.from(document.querySelectorAll('#lp-stage .col')).some(c => c.firstChild.offsetHeight + c.lastChild.offsetHeight > c.clientHeight + 1);
+}
+function repaginate() {
+  const page = curPage;
+  return render('paper').then(() => { const ss = sheets(); if (ss[page]) ss[page].scrollIntoView({ block: 'start' }); });
 }
 
 /* ---------------------------------------------------------------- render a mode */
@@ -39,7 +59,8 @@ function fontsSettled(ms = 3000) {
     return Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, ms))]);
   } catch (e) { return Promise.resolve(); }
 }
-let renderToken = 0;
+let renderToken = 0, fontsReady = false;
+/* Once fonts have settled, render() never awaits, so it runs synchronously (beforeprint relies on this). */
 async function render(m) {
   const token = ++renderToken;
   mode = m;
@@ -56,15 +77,16 @@ async function render(m) {
     if (src.mast) staging.appendChild(src.mast);
     src.blocks.forEach(b => staging.appendChild(b));
     void staging.offsetHeight;
-    await fontsSettled();
+    if (!fontsReady) { await fontsSettled(); fontsReady = true; }
     if (token !== renderToken) { staging.remove(); return; }
     stage.textContent = '';
     insts = Array.from(staging.querySelectorAll('figure[data-live]')).map(f => LP.mountFigure(f)).filter(Boolean);
     staging.remove();   // detached: moving blocks out of it no longer triggers document layout
     pagesEl = document.createElement('div');
     pagesEl.className = 'lp-pages';
-    pagesEl.style.zoom = 1;
     stage.appendChild(pagesEl);
+    layoutZoom = targetZoom();
+    pagesEl.style.zoom = layoutZoom;
     layout = LP.layoutPaper(src, pagesEl);
   } else {
     stage.textContent = '';
@@ -178,8 +200,13 @@ function wireBar() {
   });
   let rz = 0;
   addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(applyZoom, 80); });
-  addEventListener('beforeprint', () => { player.static = true; player.renderAllRest(); });
-  addEventListener('afterprint', () => { player.static = qs.has('static'); });
+  // print CSS forces zoom 1: typeset at zoom 1 first (synchronously, see render), and back afterwards
+  addEventListener('beforeprint', () => {
+    printing = true;
+    if (mode === 'paper' && layoutZoom !== 1) render('paper');
+    player.static = true; player.renderAllRest();
+  });
+  addEventListener('afterprint', () => { printing = false; player.static = qs.has('static'); applyZoom(); });
   addEventListener('hashchange', () => jumpTo(decodeURIComponent(location.hash.slice(1)), false));
 }
 
@@ -215,27 +242,48 @@ function tipContent(a) {
   box.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
   return box;
 }
+/* Tooltips. With a mouse, hovering a cross-reference, citation or footnote mark previews its target and a click
+   follows it; hovering a bibliography entry shows its abstract. Touch has no hover, and a tap sends emulated
+   mouseover/click events after the touch ones, so hover is driven by pointer events of type 'mouse' only, and taps
+   are handled in click: the first tap on a link shows the preview (tap the preview, or the link again, to follow
+   it), a tap on an entry toggles its abstract, and a tap anywhere else, or scrolling the page, closes it. */
+const PREVIEW = 'a.xref, .citation a, a.footnote-ref';
 function wireLinks() {
   const stage = $('lp-stage');
   const tip = document.createElement('div');
   tip.className = 'lp-tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
   document.body.appendChild(tip);
-  stage.addEventListener('click', e => {
-    const a = e.target.closest('a[href^="#"]');
-    if (!a) return;
-    const id = decodeURIComponent(a.getAttribute('href').slice(1));
-    if (jumpTo(id, true)) e.preventDefault();
-  });
+  let owner = null;          // the link or bibliography entry the open tooltip belongs to
+  let lastPtr = 'mouse';     // pointer type of the latest press; a keyboard 'click' counts as a mouse one
+  addEventListener('pointerdown', e => { lastPtr = e.pointerType || 'mouse'; }, true);
+  addEventListener('keydown', () => { lastPtr = 'mouse'; }, true);
+  const tapped = () => lastPtr === 'touch' || lastPtr === 'pen';
+  const hide = () => { tip.hidden = true; tip.classList.remove('lp-tip-touch'); owner = null; };
   const place = (r, center) => {
     const tw = tip.offsetWidth, th = tip.offsetHeight;
-    let x = Math.min(innerWidth - tw - 12, Math.max(12, center ? r.left + r.width / 2 - tw / 2 : r.left));
+    const x = Math.min(innerWidth - tw - 12, Math.max(12, center ? r.left + r.width / 2 - tw / 2 : r.left));
     let y = r.bottom + 8;
-    if (y + th > innerHeight - 8) y = r.top - th - 8;
-    tip.style.left = x + 'px'; tip.style.top = Math.max(8, y) + 'px';
+    if (y + th > innerHeight - 8 && r.top - th - 8 >= 8) y = r.top - th - 8;   // flip above only if it fits there
+    tip.style.left = x + 'px'; tip.style.top = Math.max(8, Math.min(y, innerHeight - th - 8)) + 'px';
+  };
+  const show = (box, cls, el, touch) => {
+    tip.replaceChildren(box);
+    tip.classList.toggle('lp-tip-abs', cls === 'abs');
+    tip.classList.toggle('lp-tip-touch', !!touch);
+    tip.hidden = false;
+    tip.scrollTop = 0;
+    owner = el;
+    place(el.getBoundingClientRect(), cls !== 'abs');
+  };
+  const showPreview = (a, touch) => {
+    const c = tipContent(a);
+    if (!c) return false;
+    if (touch) { const go = document.createElement('div'); go.className = 'tip-go'; go.textContent = 'Tap here to go there'; c.appendChild(go); }
+    show(c, 'xref', a, touch);
+    return true;
   };
   // reference notes (filters/refnotes.lua): a bibliography entry with a hidden div.ref-abs shows it as a tooltip
-  let absEntry = null;
-  const showAbstract = ent => {
+  const showAbstract = (ent, touch) => {
     const abs = ent.querySelector('.ref-abs');
     if (!abs) return false;
     const box = document.createElement('div');
@@ -243,41 +291,51 @@ function wireLinks() {
     box.appendChild(hd);
     Array.from(abs.childNodes).forEach(n => box.appendChild(n.cloneNode(true)));
     box.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
-    tip.replaceChildren(box);
-    tip.classList.add('lp-tip-abs');
-    tip.hidden = false;
-    place(ent.getBoundingClientRect(), false);
-    absEntry = ent;
+    show(box, 'abs', ent, touch);
     return true;
   };
-  stage.addEventListener('mouseover', e => {
-    const a = e.target.closest('a.xref, .citation a, a.footnote-ref');
-    if (!a) {
-      const ent = e.target.closest('.csl-entry');
-      if (ent && ent !== absEntry && !e.target.closest('a')) showAbstract(ent);
+  const follow = a => { hide(); return jumpTo(decodeURIComponent(a.getAttribute('href').slice(1)), true); };
+
+  // mouse hover
+  stage.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    const a = e.target.closest(PREVIEW);
+    if (a) { if (a !== owner) showPreview(a, false); return; }
+    const ent = e.target.closest('.csl-entry');
+    if (ent && ent !== owner && !e.target.closest('a')) showAbstract(ent, false);
+  });
+  stage.addEventListener('pointerout', e => {
+    if (e.pointerType !== 'mouse' || !owner || tip.classList.contains('lp-tip-touch')) return;
+    if (owner.contains(e.target) && !owner.contains(e.relatedTarget)) hide();
+  });
+
+  // clicks and taps
+  stage.addEventListener('click', e => {
+    const touch = tapped();
+    const a = e.target.closest('a[href^="#"]');
+    if (a) {
+      if (touch && owner !== a && a.matches(PREVIEW) && showPreview(a, true)) { e.preventDefault(); return; }
+      if (follow(a)) e.preventDefault();
       return;
     }
-    const c = tipContent(a);
-    if (!c) return;
-    tip.replaceChildren(c);
-    tip.classList.remove('lp-tip-abs');
-    absEntry = null;
-    tip.hidden = false;
-    place(a.getBoundingClientRect(), true);
-  });
-  stage.addEventListener('mouseout', e => {
-    if (e.target.closest('a.xref, .citation a, a.footnote-ref')) tip.hidden = true;
+    if (e.target.closest('a')) { if (owner) hide(); return; }   // an external link (DOI, arXiv) just opens
     const ent = e.target.closest('.csl-entry');
-    if (ent && ent === absEntry && !ent.contains(e.relatedTarget)) { tip.hidden = true; absEntry = null; }
+    if (ent && ent.querySelector('.ref-abs')) {
+      if (touch && owner === ent) hide(); else if (owner !== ent) showAbstract(ent, touch);
+      return;
+    }
+    if (owner) hide();
   });
-  // touch: a tap on an entry shows its abstract, a second tap or a tap elsewhere closes it
-  stage.addEventListener('click', e => {
-    const ent = e.target.closest('.csl-entry');
-    if (!ent || e.target.closest('a')) { if (absEntry && !ent) { tip.hidden = true; absEntry = null; } return; }
-    if (absEntry === ent && !tip.hidden && e.pointerType && e.pointerType !== 'mouse') { tip.hidden = true; absEntry = null; return; }
-    showAbstract(ent);
+  tip.addEventListener('click', e => {
+    if (owner && owner.matches && owner.matches('a[href^="#"]')) { e.preventDefault(); follow(owner); }
+    else hide();
   });
-  addEventListener('scroll', () => { tip.hidden = true; absEntry = null; }, { passive: true });
+  document.addEventListener('click', e => {
+    if (owner && !tip.contains(e.target) && !stage.contains(e.target)) hide();
+  });
+  // scrolling the page moves the anchor away; a scroll inside the tooltip itself (long abstracts) does not count
+  addEventListener('scroll', e => { if (owner && e.target !== tip) hide(); }, { passive: true, capture: true });
+  addEventListener('resize', () => { if (owner) hide(); });
 }
 
 /* ---------------------------------------------------------------- report (used by `livepaper check`) */
@@ -364,13 +422,7 @@ function watchLateFonts() {
   let t = 0;
   document.fonts.addEventListener('loadingdone', () => {
     clearTimeout(t);
-    t = setTimeout(() => {
-      if (mode !== 'paper') return;
-      const bad = Array.from(document.querySelectorAll('#lp-stage .col')).some(c => c.firstChild.offsetHeight + c.lastChild.offsetHeight > c.clientHeight + 1);
-      if (!bad) return;
-      const page = curPage;
-      render('paper').then(() => { const ss = sheets(); if (ss[page]) ss[page].scrollIntoView({ block: 'start' }); });
-    }, 150);
+    t = setTimeout(() => { if (mode === 'paper' && columnsOverflow()) repaginate(); }, 150);
   });
 }
 /* for figure modules: scroll to an element of the paper by id (e.g. a section), with a flash */

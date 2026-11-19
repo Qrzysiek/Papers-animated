@@ -27,6 +27,8 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
+/* no automatic text inflation on phones (iOS landscape, Android autosizing): it would change measured line breaks */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{background:var(--desk);color:var(--ink);font-family:var(--serif)}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bar)}
 
@@ -68,8 +70,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .sheet .band > *{margin-top:0}
 .sheet .band.after-mast{margin-top:14px}
 /* columns are absolutely positioned and contained, so appending a block only re-lays-out that column */
-.cols{flex:1 1 auto;min-height:0;position:relative;contain:strict}
-.col{position:absolute;top:0;bottom:0;width:380.5px;overflow:hidden;contain:strict}
+/* Columns clip their content, but the ink of a last line's math (delimiters, fraction denominators) may reach
+   a few px below the line box: paint it up to 5px past the edge, still above the running foot (6px below). */
+.cols{flex:1 1 auto;min-height:0;position:relative;contain:strict;overflow-clip-margin:5px}
+.col{position:absolute;top:0;bottom:0;width:380.5px;overflow:hidden;overflow:clip;overflow-clip-margin:5px;contain:strict}
 .col:first-child{left:0}
 .col:last-child{left:407.5px}
 .col-body{display:flow-root}
@@ -256,7 +260,12 @@ svg .hot:hover .bx{filter:brightness(.92)}
 
 /* tooltip and flash */
 .lp-tip{position:fixed;z-index:60;max-width:min(420px,calc(100vw - 32px));padding:8px 11px;background:var(--paper);color:var(--ink);
-  border:1.2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);font:14px/1.35 var(--serif);pointer-events:none}
+  border:1.2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);font:14px/1.35 var(--serif);pointer-events:none;
+  max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain}
+/* opened by a tap: it can be tapped (to follow the link) and scrolled (long abstracts) */
+.lp-tip.lp-tip-touch{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.lp-tip .tip-go{margin-top:6px;padding-top:5px;border-top:1px solid var(--faint);font:12px/1.2 var(--sans);color:var(--mid)}
+.lp-tip .tip-go::after{content:" \2192"}
 .lp-tip .eq{display:flex;align-items:center;gap:8px}
 .lp-tip .eq .katex-display{flex:1}
 .lp-tip p{margin:0}
