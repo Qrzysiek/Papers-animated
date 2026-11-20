@@ -38,6 +38,7 @@ When notes belong together, keep a registry `notes/series.json`: `{title, notes:
 - Equations: `$$ ... $$ {#eq:x}` (numbered) and `@eq:x`. Sections: `# T {#sec:x}`, with `{.appendix}` on the first appendix heading only.
 - Refs: `@sec:x @fig:x @tbl:x @alg:x @thm:x`. Citations: `[@key]`.
 - `::: {.theorem #thm:x title="..."}` (lemma, proposition, corollary, definition, example, remark), `::: proof`, `::: takeaway`, `::: {.box title=".."}`.
+- Exercises: `::: {.exercise #ex:x title=".."}` with a nested `::: solution` (hidden behind a button in HTML, collected at the end of the PDF). Own counter; `@ex:x`.
 - `::: {.figure #fig:x live="figures/x.js" .wide snap=3}` with the caption inside. `.wide` spans both columns, `.full` gets its own page, and `scene=abstract` attaches the figure to the abstract's scene.
 - `::: {.table #tbl:x .wide}` with a pipe table and a `Table: caption` line. `::: {.algorithm #alg:x title=".."}` with an ordered list.
 - Scenes: `::: {.scene #sc:x steps="a|b|c" dur=2.6}` … `:::`. Inside: `[text]{.s2}`, `[text]{.s2-4}`, `$\htmlClass{s2}{...}$`. Front matter `abstract-steps: "a|b|c"` makes the abstract a scene.

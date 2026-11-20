@@ -61,7 +61,7 @@ end
 local ENV_NAMES = {
   theorem = 'Theorem', lemma = 'Lemma', proposition = 'Proposition', corollary = 'Corollary',
   definition = 'Definition', conjecture = 'Conjecture', example = 'Example', claim = 'Claim',
-  fact = 'Fact', remark = 'Remark', proof = 'Proof',
+  fact = 'Fact', remark = 'Remark', proof = 'Proof', exercise = 'Exercise', solution = 'Solution',
 }
 local NUMBERED = { theorem = 1, lemma = 1, proposition = 1, corollary = 1, definition = 1,
   conjecture = 1, example = 1, claim = 1, fact = 1 }
@@ -76,7 +76,8 @@ end
 -- ---------------------------------------------------------------- state
 local L = {}             -- label -> {kind=, prefix=, num=}
 local scenes = {}        -- list of scene definitions (html only)
-local cnt = { eq = 0, fig = 0, tbl = 0, alg = 0, env = 0 }
+local cnt = { eq = 0, fig = 0, tbl = 0, alg = 0, env = 0, exr = 0 }
+local SOLUTIONS = {}     -- LaTeX: exercise solutions, typeset together at the end of the document
 local sec = { 0, 0, 0, 0, 0, 0 }
 local appendix = false
 
@@ -151,7 +152,13 @@ local function number_pass(doc)
         return d
       else
         local k = env_kind(d)
-        if k and NUMBERED[k] then
+        if k == 'exercise' then
+          -- exercises have their own counter, so a problem set reads Exercise 1, 2, 3 ...
+          cnt.exr = cnt.exr + 1; d.attributes['lp-num'] = tostring(cnt.exr)
+          if d.identifier == '' then d.identifier = 'ex-auto-' .. cnt.exr end
+          register(d.identifier, { kind = 'env', prefix = 'Exercise', num = tostring(cnt.exr) })
+          return d
+        elseif k and NUMBERED[k] then
           cnt.env = cnt.env + 1; d.attributes['lp-num'] = tostring(cnt.env)
           register(d.identifier, { kind = 'env', prefix = ENV_NAMES[k], num = tostring(cnt.env) })
           return d
@@ -512,7 +519,32 @@ end
 local function emit_env(d, kind, ctx)
   local id, num = d.identifier, d.attributes['lp-num']
   local title = md_inlines(d.attributes['title'] or '')
-  local body = xform_blocks(d.content, ctx)
+  -- an exercise may contain ::: solution blocks: hidden behind a button in HTML, collected at the end in LaTeX
+  local content, solbody = d.content, {}
+  if kind == 'exercise' then
+    content = {}
+    for _, b in ipairs(d.content) do
+      if b.t == 'Div' and has_class(b, 'solution') then
+        for _, x in ipairs(xform_blocks(b.content, ctx)) do solbody[#solbody + 1] = x end
+      else
+        content[#content + 1] = b
+      end
+    end
+  end
+  local body = xform_blocks(content, ctx)
+  if #solbody > 0 then
+    if IS_LATEX then
+      body[#body + 1] = pandoc.RawBlock('latex', '\\par\\nopagebreak\\noindent\\hfill{\\small\\itshape\\hyperref[sol:' .. id ..
+        ']{Solution, p.~\\pageref*{sol:' .. id .. '}}}')
+      SOLUTIONS[#SOLUTIONS + 1] = { id = id, num = num, blocks = solbody }
+    else
+      body[#body + 1] = pandoc.RawBlock('html', '<div class="lp-solrow"><button type="button" class="lp-sol-btn" aria-expanded="false"' ..
+        ' data-sol="' .. hid(id) .. '" data-ex="' .. esc(num or '') .. '">Solution</button></div>')
+      body[#body + 1] = pandoc.RawBlock('html', '<div class="lp-sol" data-sol="' .. hid(id) .. '">')
+      for _, x in ipairs(solbody) do body[#body + 1] = x end
+      body[#body + 1] = pandoc.RawBlock('html', '</div>')
+    end
+  end
   if IS_LATEX then
     local head = pandoc.Inlines{ pandoc.RawInline('latex', '\\begin{' .. kind .. '}') }
     if #title > 0 then
@@ -748,6 +780,14 @@ function Pandoc(doc)
   local blocks = xform_blocks(doc.blocks, {})
   local macros = macro_table(meta)
 
+  if IS_LATEX and #SOLUTIONS > 0 then
+    blocks[#blocks + 1] = pandoc.RawBlock('latex', '\\section*{Solutions}\\addcontentsline{toc}{section}{Solutions}')
+    for _, s in ipairs(SOLUTIONS) do
+      blocks[#blocks + 1] = pandoc.RawBlock('latex', '\\paragraph{Solution to \\hyperref[' .. s.id .. ']{Exercise ' ..
+        (s.num or '') .. '}.}\\label{sol:' .. s.id .. '}')
+      for _, b in ipairs(s.blocks) do blocks[#blocks + 1] = b end
+    end
+  end
   if IS_LATEX then
     meta['lp-latex-macros'] = pandoc.MetaBlocks { pandoc.RawBlock('latex', latex_macros(macros)) }
   else

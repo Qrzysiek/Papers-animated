@@ -75,6 +75,45 @@ test('columns fit at every zoom, also after a resize', { skip: !browserMod && 'n
   } finally { await browser.close(); }
 });
 
+test('exercises: the solution button opens a panel that stays open until closed', { skip: !browserMod && 'no browser' }, async () => {
+  const dir = path.join(OUT, 'exercises');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'test', 'fixtures', 'exercises.md'), path.join(dir, 'paper.md'));
+  const r = buildHtml(path.join(dir, 'paper.md'), { out: path.join(dir, 'dist') });
+  const url = 'file:///' + r.file.replace(/\\/g, '/') + '?static';
+  const state = () => { const t = document.querySelector('.lp-tip'), b = document.querySelector('.lp-sol-btn');
+    return { shown: !t.hidden, sol: t.classList.contains('lp-tip-sol'), text: t.textContent, exp: b.getAttribute('aria-expanded'),
+      visibleSol: getComputedStyle(document.querySelector('#lp-stage .lp-sol')).display }; };
+  const browser = await browserMod.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
+    const errs = []; page.on('pageerror', e => errs.push(e.message));
+    await page.goto(url);
+    await page.waitForFunction(() => window.LP_READY === true);
+    assert.equal((await page.evaluate(state)).visibleSol, 'none', 'the solution is hidden in the page');
+    await page.locator('.lp-sol-btn').click(); await page.waitForTimeout(200);
+    let s = await page.evaluate(state);
+    assert.ok(s.shown && s.sol && s.exp === 'true' && s.text.startsWith('Solution to Exercise 1') && s.text.includes('A second paragraph'));
+    const box = await page.locator('.lp-tip').boundingBox();
+    await page.mouse.click(box.x + 15, box.y + box.height - 8); await page.waitForTimeout(150);
+    assert.ok((await page.evaluate(state)).shown, 'a click inside the panel keeps it open');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+    s = await page.evaluate(state);
+    assert.ok(!s.shown && s.exp === 'false', 'Escape closes it');
+    await page.locator('.lp-sol-btn').click(); await page.waitForTimeout(150);
+    await page.locator('.lp-sol-btn').click(); await page.waitForTimeout(150);
+    assert.ok(!(await page.evaluate(state)).shown, 'a second click on the button closes it');
+    assert.deepEqual(errs, []);
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const phone = await ctx.newPage();
+    await phone.goto(url);
+    await phone.waitForFunction(() => window.LP_READY === true);
+    await phone.locator('.lp-sol-btn').tap(); await phone.waitForTimeout(250);
+    assert.ok((await phone.evaluate(state)).shown, 'a tap opens it on a phone');
+    await ctx.close();
+  } finally { await browser.close(); }
+});
+
 test('tooltips: taps on a touch screen, hover and click with a mouse', { skip: !browserMod && 'no browser' }, async () => {
   // A tap sends emulated mouseover and click events after the touch ones; hover handling must not act on them,
   // or the tap that opens an abstract closes it again at once.

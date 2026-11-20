@@ -258,7 +258,10 @@ function wireLinks() {
   addEventListener('pointerdown', e => { lastPtr = e.pointerType || 'mouse'; }, true);
   addEventListener('keydown', () => { lastPtr = 'mouse'; }, true);
   const tapped = () => lastPtr === 'touch' || lastPtr === 'pen';
-  const hide = () => { tip.hidden = true; tip.classList.remove('lp-tip-touch'); owner = null; };
+  const hide = () => {
+    if (owner && owner.classList && owner.classList.contains('lp-sol-btn')) owner.setAttribute('aria-expanded', 'false');
+    tip.hidden = true; tip.classList.remove('lp-tip-touch'); owner = null;
+  };
   const place = (r, center) => {
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     const x = Math.min(innerWidth - tw - 12, Math.max(12, center ? r.left + r.width / 2 - tw / 2 : r.left));
@@ -267,13 +270,15 @@ function wireLinks() {
     tip.style.left = x + 'px'; tip.style.top = Math.max(8, Math.min(y, innerHeight - th - 8)) + 'px';
   };
   const show = (box, cls, el, touch) => {
+    if (owner && owner.classList && owner.classList.contains('lp-sol-btn')) owner.setAttribute('aria-expanded', 'false');
     tip.replaceChildren(box);
-    tip.classList.toggle('lp-tip-abs', cls === 'abs');
+    tip.classList.toggle('lp-tip-abs', cls === 'abs' || cls === 'sol');
+    tip.classList.toggle('lp-tip-sol', cls === 'sol');
     tip.classList.toggle('lp-tip-touch', !!touch);
     tip.hidden = false;
     tip.scrollTop = 0;
     owner = el;
-    place(el.getBoundingClientRect(), cls !== 'abs');
+    place(el.getBoundingClientRect(), cls === 'xref');
   };
   const showPreview = (a, touch) => {
     const c = tipContent(a);
@@ -295,6 +300,20 @@ function wireLinks() {
     return true;
   };
   const follow = a => { hide(); return jumpTo(decodeURIComponent(a.getAttribute('href').slice(1)), true); };
+  // exercises: the hidden div.lp-sol with the same data-sol opens in the panel; it stays open until closed
+  const showSolution = btn => {
+    const sol = stage.querySelector('.lp-sol[data-sol="' + btn.dataset.sol + '"]');
+    if (!sol) return false;
+    const box = document.createElement('div');
+    const hd = document.createElement('div'); hd.className = 'lp-sol-hd';
+    hd.textContent = 'Solution to Exercise ' + (btn.dataset.ex || '');
+    box.appendChild(hd);
+    Array.from(sol.childNodes).forEach(n => box.appendChild(n.cloneNode(true)));
+    box.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+    show(box, 'sol', btn, true);
+    btn.setAttribute('aria-expanded', 'true');
+    return true;
+  };
 
   // mouse hover
   stage.addEventListener('pointerover', e => {
@@ -312,6 +331,8 @@ function wireLinks() {
   // clicks and taps
   stage.addEventListener('click', e => {
     const touch = tapped();
+    const sb = e.target.closest('.lp-sol-btn');
+    if (sb) { if (owner === sb) hide(); else showSolution(sb); return; }
     const a = e.target.closest('a[href^="#"]');
     if (a) {
       if (touch && owner !== a && a.matches(PREVIEW) && showPreview(a, true)) { e.preventDefault(); return; }
@@ -327,9 +348,11 @@ function wireLinks() {
     if (owner) hide();
   });
   tip.addEventListener('click', e => {
+    if (owner && owner.classList && owner.classList.contains('lp-sol-btn')) return;   // read, select, scroll: stays open
     if (owner && owner.matches && owner.matches('a[href^="#"]')) { e.preventDefault(); follow(owner); }
     else hide();
   });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && owner) hide(); });
   document.addEventListener('click', e => {
     if (owner && !tip.contains(e.target) && !stage.contains(e.target)) hide();
   });

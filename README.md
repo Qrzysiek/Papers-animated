@@ -77,6 +77,7 @@ sections:                                   # optional: split a long paper into 
 | citation | `[@key]`, `[@a; @b]` (IEEE numeric style) |
 | theorem-like | `::: {.theorem #thm:x title="Name"}` … `:::` (also lemma, proposition, corollary, definition, conjecture, example, claim, fact, remark) |
 | proof | `::: proof` … `:::` |
+| exercise | `::: {.exercise #ex:x title="Name"}` … `::: solution` … `:::` … `:::`. Exercises have their own counter (Exercise 1, 2, …; `@ex:x`). In HTML the solution is hidden behind a *Solution* button that opens it in the tooltip panel (click, tap, Escape or a second click closes it); in the PDF all solutions are collected in a *Solutions* section at the end, linked both ways. |
 | live figure | `::: {.figure #fig:x live="figures/x.js" .wide snap=3}` + caption paragraph + `:::` (`.wide` spans both columns, `.full` gets its own page) |
 | static figure | `![Caption](img.png){#fig:x}` (PNG/JPG/PDF for LaTeX) |
 | table | `::: {.table #tbl:x .wide}` + pipe table + `Table: caption` + `:::` |
