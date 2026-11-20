@@ -55,4 +55,9 @@ When notes belong together, keep a registry `notes/series.json`: `{title, notes:
 - Heredocs in the Bash tool eat backslashes, so write files containing TeX with the Write tool.
 - A wide equation in the PDF shows up as an overfull hbox. Split it with `aligned`.
 - Figure step spans in captions only work if the figure has steps, from a scene or from the module.
-- `latexmk` errors: look at `build/paper.log`. `amsthm` must load before `newtxmath`; the template already does this.
+- `latexmk` errors: look at `build/paper.log`. `amsthm` must load before `newtxmath`; the template already does this. The build prints only the first few overfull boxes: `grep -c Overfull build/paper.log` must be 0.
+- `@eq:x` prints "(3)"; `[-@eq:x]` prints a bare "3", which reads badly after a noun ("the trace form 1"). Use `@eq:x` in running text.
+- Algorithm blocks render only numbered list items: write `1. **Input:** …` as the first item, not a bare `Input:` line, or the box comes out empty.
+- In figure modules, `kit.tex` returns `{fo, set}` (use `item.fo` for opacity), and JavaScript has `Math.LN2`/`Math.LN10` but no `Math.LN3`. A NaN attribute shows up in `check` as a console error.
+- A figure with `scene=abstract` should sit in the first section, so it appears next to the abstract it animates with.
+- After every figure change, look at the rest frame for labels that touch curves or points; place labels at free curve ends or in a legend in an empty corner.
