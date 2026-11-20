@@ -7,12 +7,19 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIX = path.join(ROOT, 'test', 'fixtures');
-const run = to => {
-  const r = spawnSync('pandoc', ['exercises.md', '-t', to, '--wrap=none', '--lua-filter', path.join(ROOT, 'filters', 'livepaper.lua')],
+const run = (to, file = 'exercises.md', extra = []) => {
+  const r = spawnSync('pandoc', [file, '-t', to, '--wrap=none', '--lua-filter', path.join(ROOT, 'filters', 'livepaper.lua'), ...extra],
     { cwd: FIX, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 };
+
+test('latex: the bibliography closes the main text, before the solutions', () => {
+  const out = run('latex', 'exercises-cite.md', ['--citeproc', '--csl', path.join(ROOT, 'csl', 'ieee.csl')]);
+  const refs = out.indexOf('\\begin{CSLReferences}'), sols = out.indexOf('\\section*{Solutions}');
+  assert.ok(refs > 0 && sols > refs, 'references before solutions');
+  assert.equal((out.match(/\\begin\{CSLReferences\}/g) || []).length, 1, 'one bibliography');
+});
 
 test('html: exercises are numbered on their own, the solution sits behind a button', () => {
   const out = run('html5');

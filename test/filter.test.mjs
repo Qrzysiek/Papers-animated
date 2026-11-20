@@ -29,6 +29,16 @@ test('html: equations become numbered blocks; the paragraph continues after them
   assert.match(out, /<span class="eqno">\(1\)<\/span><\/div>\s*<p class="cont">/);
 });
 
+test('html: inline math and the punctuation after it share a no-wrap span; latex is unchanged', () => {
+  const { out } = run('html5', ['--math-method=mathjax', '--shift-heading-level-by=1']);
+  assert.match(out, /<span class="lp-nb"><span class="math inline">\\\(G \\ge d\/c\\\)<\/span>\.<\/span>/);
+  assert.match(out, /<span class="lp-nb"><span class="math inline">\\\(\\tr H\\\)<\/span>\.<\/span>/);
+  assert.match(out, /with <span class="math inline">\\\(\\ket\{\\psi\}\\\)<\/span> and/, 'math without punctuation is left alone');
+  const tex = run('latex').out;
+  assert.ok(!tex.includes('lp-nb'), 'no span in LaTeX');
+  assert.match(tex, /\\\(G \\ge d\/c\\\)\./);
+});
+
 test('html: scenes, step spans, figures, algorithms and the data block', () => {
   const { out } = run('html5', ['--math-method=mathjax', '--shift-heading-level-by=1']);
   const data = JSON.parse(out.match(/<script type="application\/json" id="lp-data">([\s\S]*?)<\/script>/)[1]);

@@ -77,7 +77,7 @@ sections:                                   # optional: split a long paper into 
 | citation | `[@key]`, `[@a; @b]` (IEEE numeric style) |
 | theorem-like | `::: {.theorem #thm:x title="Name"}` … `:::` (also lemma, proposition, corollary, definition, conjecture, example, claim, fact, remark) |
 | proof | `::: proof` … `:::` |
-| exercise | `::: {.exercise #ex:x title="Name"}` … `::: solution` … `:::` … `:::`. Exercises have their own counter (Exercise 1, 2, …; `@ex:x`). In HTML the solution is hidden behind a *Solution* button that opens it in the tooltip panel (click, tap, Escape or a second click closes it); in the PDF all solutions are collected in a *Solutions* section at the end, linked both ways. |
+| exercise | `::: {.exercise #ex:x title="Name"}` … `::: solution` … `:::` … `:::`. Exercises have their own counter (Exercise 1, 2, …; `@ex:x`). In HTML the solution is hidden behind a *Solution* button that opens it in the tooltip panel (click, tap, Escape or a second click closes it); in the PDF all solutions are collected in a *Solutions* section at the end, after the references, linked both ways. A long exercise title followed directly by a list can overflow the theorem head in LaTeX; start such an exercise with a sentence. |
 | live figure | `::: {.figure #fig:x live="figures/x.js" .wide snap=3}` + caption paragraph + `:::` (`.wide` spans both columns, `.full` gets its own page) |
 | static figure | `![Caption](img.png){#fig:x}` (PNG/JPG/PDF for LaTeX) |
 | table | `::: {.table #tbl:x .wide}` + pipe table + `Table: caption` + `:::` |
@@ -181,7 +181,9 @@ Publish `dist/artifact.html`: it has no document skeleton, and fonts, KaTeX and 
 - `filters/livepaper.lua`, one Pandoc filter for both outputs, does three jobs:
   - it numbers sections, equations, figures, tables, algorithms and environments, and resolves references;
   - it turns fenced divs into HTML structures or LaTeX environments;
-  - it tags scene elements, and collects scenes, macros and labels into a JSON block.
+  - it tags scene elements, and collects scenes, macros and labels into a JSON block;
+  - in HTML it binds inline math to the punctuation after it (`span.lp-nb`, no wrap), because browsers may break a line after the inline-blocks KaTeX produces.
+- A wide figure joins the band at the top of a page only while that page's columns are empty. A wide figure meant to sit under the abstract (`scene=abstract`) must therefore come before the first heading.
 - `src/build.mjs` runs pandoc and prerenders all math with KaTeX. It inlines CSS, fonts, runtime and figure modules into one file, and drives `latexmk`.
 - `runtime/paginate.js` flows the article into fixed sheets. Paragraphs split at word boundaries (KaTeX stays atomic), and lists, environments and reference lists split between items. Figures, tables and algorithms float to the next column. Wide items go to a band at the top of the next page, full figures get their own page, and footnotes go to the foot of their column. Columns are absolutely positioned with CSS containment, so each measurement only re-lays-out one column: a 14-page paper paginates in about 0.2 s. Pages are typeset at the zoom they are shown at, because text breaks into lines slightly differently at other zooms; a resize or zoom change that makes a column overflow typesets again, and printing typesets at zoom 1.
 - `runtime/player.js` gives each scene its own clock; `runtime/ui.js` handles the toolbar, zoom, modes, theme, links, tooltips and the report used by `check`.

@@ -215,8 +215,31 @@ local function xref(cite)
   return out
 end
 
+-- html: inline math followed by punctuation goes into one no-wrap span. KaTeX renders math as inline-blocks, and
+-- browsers may break a line after any inline-block, so "$x$." could otherwise leave the period alone on the next line.
+local function bind_punctuation(list)
+  if IS_LATEX then return nil end
+  local out, i, changed = pandoc.Inlines{}, 1, false
+  while i <= #list do
+    local el, nx = list[i], list[i + 1]
+    local p, rest
+    if el.t == 'Math' and el.mathtype == 'InlineMath' and nx and nx.t == 'Str' then
+      p, rest = nx.text:match('^([%.,;:!%?%)%]]+)(.*)$')
+    end
+    if p then
+      out:insert(pandoc.Span({ el, pandoc.Str(p) }, pandoc.Attr('', { 'lp-nb' })))
+      if rest ~= '' then out:insert(pandoc.Str(rest)) end
+      i, changed = i + 2, true
+    else
+      out:insert(el); i = i + 1
+    end
+  end
+  return changed and out or nil
+end
+
 local function xform_inlines(inls, ctx)
   return pandoc.Inlines(inls):walk {
+    Inlines = bind_punctuation,
     Cite = function(c) return xref(c) end,
     Span = function(s)
       local stepped = false
@@ -781,6 +804,11 @@ function Pandoc(doc)
   local macros = macro_table(meta)
 
   if IS_LATEX and #SOLUTIONS > 0 then
+    -- this filter runs before citeproc, which appends the bibliography at the end unless a div#refs exists; give it
+    -- one here, so that the references close the main text and the solutions come after them
+    local has_refs = false
+    for _, b in ipairs(blocks) do if b.t == 'Div' and b.identifier == 'refs' then has_refs = true end end
+    if not has_refs then blocks[#blocks + 1] = pandoc.Div({}, pandoc.Attr('refs')) end
     blocks[#blocks + 1] = pandoc.RawBlock('latex', '\\section*{Solutions}\\addcontentsline{toc}{section}{Solutions}')
     for _, s in ipairs(SOLUTIONS) do
       blocks[#blocks + 1] = pandoc.RawBlock('latex', '\\paragraph{Solution to \\hyperref[' .. s.id .. ']{Exercise ' ..

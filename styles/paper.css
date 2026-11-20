@@ -153,6 +153,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   background-repeat:no-repeat;background-position:0 100%,0 0;background-size:0% 1.4px,0% 100%;
   transition:background-size .6s ease;padding-bottom:1px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .lp-s.on{background-size:100% 1.4px,100% 100%}
+/* inline math and the punctuation after it stay on one line (filter: bind_punctuation) */
+.lp-nb{white-space:nowrap}
 
 /* figures */
 .flowtext .lp-fig{margin:calc(var(--fs)*1.1) 0 calc(var(--fs)*.5)}

@@ -60,5 +60,6 @@ When notes belong together, keep a registry `notes/series.json`: `{title, notes:
 - `@eq:x` prints "(3)"; `[-@eq:x]` prints a bare "3", which reads badly after a noun ("the trace form 1"). Use `@eq:x` in running text.
 - Algorithm blocks render only numbered list items: write `1. **Input:** …` as the first item, not a bare `Input:` line, or the box comes out empty.
 - In figure modules, `kit.tex` returns `{fo, set}` (use `item.fo` for opacity), and JavaScript has `Math.LN2`/`Math.LN10` but no `Math.LN3`. A NaN attribute shows up in `check` as a console error.
-- A figure with `scene=abstract` should sit in the first section, so it appears next to the abstract it animates with.
+- A figure with `scene=abstract` should sit in the first section, so it appears next to the abstract it animates with. If it is `.wide`, put it before the first heading: a wide figure joins the top band of a page only while the page's columns are empty, otherwise it moves to the next page.
+- Exercises: a long title followed directly by a list overflows the theorem head in the PDF, so start the exercise with a sentence. Hidden solutions are typeset in the PDF's narrow columns, so split their wide equations with `aligned` too; `grep -c Overfull build/paper.log` covers them.
 - After every figure change, look at the rest frame for labels that touch curves or points; place labels at free curve ends or in a legend in an empty corner.
