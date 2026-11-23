@@ -44,6 +44,24 @@ test('a long paragraph is split across columns and pages', { skip: !browserMod &
   assert.deepEqual(c.consoleErrors, []);
 });
 
+test('a section heading moves with a subheading pushed to the next column', { skip: !browserMod && 'no browser' }, async () => {
+  // "# Section" directly followed by "## Subsection": when the subheading fits but leaves too little room
+  // under it, both must move on, not only the subheading. Paragraph lengths sweep the heading pairs over
+  // every position in a column.
+  const dir = path.join(OUT, 'headings');
+  fs.mkdirSync(dir, { recursive: true });
+  const words = ['complexity', 'of', 'a', 'unitary', 'geodesic', 'penalty', 'is', 'the', 'length', 'Hamiltonian', 'curvature', 'at'];
+  const para = n => Array.from({ length: n }, (_, i) => words[(i * 5 + n) % words.length]).join(' ') + '.';
+  const md = `---\ntitle: Headings\n---\n\n` + Array.from({ length: 60 }, (_, k) =>
+    `# Section ${k + 1}\n\n## Part ${k + 1}\n\n${para(14 + (9 * k) % 70)}\n`).join('\n');
+  fs.writeFileSync(path.join(dir, 'paper.md'), md);
+  const r = buildHtml(path.join(dir, 'paper.md'), { out: path.join(dir, 'dist') });
+  const c = await browserMod.checkPaper(r.file, path.join(dir, 'check'), { interact: false });
+  assert.ok(c.report.pages >= 3, 'several pages');
+  assert.deepEqual(c.report.stranded, []);
+  assert.deepEqual(c.report.overflows, []);
+});
+
 test('columns fit at every zoom, also after a resize', { skip: !browserMod && 'no browser' }, async () => {
   // Text breaks into lines slightly differently at different zooms, so pages must be typeset at the zoom
   // they are shown at; otherwise a column measured at zoom 1 overflows and its last line is cut in half.

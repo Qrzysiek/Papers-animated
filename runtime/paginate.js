@@ -189,7 +189,8 @@ function Paginator(src, pagesEl) {
   }
   function placeHeading(h) {
     placeAtomic(h);
-    if (colBody.children.length > 1 && room() < 2.6 * LH) { h.remove(); nextCol(); colBody.appendChild(h); }
+    // too little room under it: move on, taking along a heading directly above (a section title over its first subsection)
+    if (colBody.children.length > 1 && room() < 2.6 * LH) { h.remove(); advance(); colBody.appendChild(h); }
   }
 
   /* split a paragraph that sits (overflowing) at the end of the column.
