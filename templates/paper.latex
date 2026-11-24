@@ -93,6 +93,7 @@
 
 \newsavebox{\lpboxbin}
 \newenvironment{lptake}[1]{\def\lpboxtitle{#1}\begin{lrbox}{\lpboxbin}%
+  \setlength{\fboxrule}{0.9pt}% the frame's rule, so the content is exactly as wide as the box that holds it
   \begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}\raggedright\bfseries\itshape\large}%
   {\end{minipage}\end{lrbox}\par\medskip\noindent
   \setlength{\fboxrule}{0.9pt}\fcolorbox{black}{black!4}{\begin{minipage}{\linewidth-2\fboxsep-2\fboxrule-3pt}%
