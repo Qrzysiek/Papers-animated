@@ -59,3 +59,15 @@ test('latex: labels, environments, floats and one \\appendix', () => {
   assert.equal(out.split('\\appendix').length - 1, 1);
   assert.ok(!out.includes('lp-s'), 'no live-only classes leak into LaTeX');
 });
+
+test('latex: the relative column widths of a table add up to at most the line', () => {
+  // six equal columns: 1/6 rounded up to 0.167 gave 1.002 of the width, an overfull box in every wide six-column table
+  const cells = Array.from({ length: 6 }, (_, i) => `cell ${i} with enough words to make the line long`);
+  const md = `::: {.table #tbl:six .wide}\n| ${cells.join(' | ')} |\n|${'---|'.repeat(6)}\n| ${cells.join(' | ')} |\n\nTable: Six columns.\n:::\n`;
+  const r = spawnSync('pandoc', ['-f', 'markdown', '-t', 'latex', '--wrap=none', '--lua-filter', path.join(ROOT, 'filters', 'livepaper.lua')],
+    { input: md, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const ws = [...r.stdout.matchAll(/p\{([\d.]+)\\dimexpr/g)].map(m => +m[1]);
+  assert.equal(ws.length, 6);
+  assert.ok(ws.reduce((a, b) => a + b, 0) <= 1, 'widths ' + ws.join(' '));
+});

@@ -418,7 +418,8 @@ local function latex_table(tbl, id, num, wide, ctx)
     local col
     if type(w) == 'number' and w > 0 then
       col = '>{' .. (a == 'c' and '\\centering' or (a == 'r' and '\\raggedleft' or '\\raggedright')) ..
-        '\\arraybackslash}p{' .. string.format('%.3f', w) .. '\\dimexpr\\linewidth-' .. (2 * ncol) .. '\\tabcolsep\\relax}'
+        -- rounded down: rounding 1/6 up to 0.167 made six columns 1.002 of the width (an overfull box)
+        '\\arraybackslash}p{' .. string.format('%.4f', math.floor(w * 10000) / 10000) .. '\\dimexpr\\linewidth-' .. (2 * ncol) .. '\\tabcolsep\\relax}'
     else
       col = '>{' .. (a == 'c' and '\\centering' or (a == 'r' and '\\raggedleft' or '\\raggedright')) .. '\\arraybackslash}X'
     end
