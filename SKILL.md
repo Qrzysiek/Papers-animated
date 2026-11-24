@@ -16,10 +16,20 @@ The toolkit lives at `C:\Users\qrzys\Documents\Projects\Papers_animated` (README
    - Do not cite from memory.
    - Let the checking script also write the figure data to `figures/_<name>.json` (inlined as `LP.ds.<name>`).
 3. **Write the text** in Pandoc Markdown with the constructs below. Plain, direct prose.
-4. **Write the figures**, one module per live figure. Plots and box-and-arrow figures are specs: `export default LP.chart({...})` / `LP.diagram({...})` with data from `LP.ds` (README, "Chart and diagram figures"); write a full module only when no component fits. Use a scene whenever text should follow a figure.
+4. **Write the figures**, one module per live figure. Plots and box-and-arrow figures are specs: `export default LP.chart({...})` / `LP.diagram({...})` with data from `LP.ds` (README, "Chart and diagram figures"); several plots in one figure are `LP.chart({ panels: [...], sharex/sharey })`, not overlaid curves on one axis. Write a full module only when no component fits. Use a scene whenever text should follow a figure.
 5. **Build and check:** `livepaper check paper.md`. Fix every reported problem: the report includes figure labels that stick out, overlap or sit on a line. Then **look at** `build/check/sheet.png` (all pages on one image, problem pages outlined) with the Read tool, and open a single `page-NN.png`, `lint-<figure>.png` or `mobile-dark.png` only where the sheet or the report points. Look for figures cut off, empty-looking pages, and headings far from their content. Repeat until clean. For phones and tablets, `livepaper devices paper.md` runs WebKit with iPad and iPhone profiles.
 6. **PDF:** `livepaper build paper.md --pdf`, then render pages with `pdftoppm -r 60 -png dist/paper.pdf build/pdfp` and look at a few. Fix overfull equations by splitting them with `aligned`; LaTeX columns are narrower than the HTML ones.
 7. **Publish** `dist/artifact.html` with the Artifact tool. It is a fragment with no doctype, already artifact-compliant: theme tokens, dark mode, reflow at phone width, and everything inlined. Give the user the link and the paths to `dist/index.html` (offline) and `dist/paper.pdf`.
+
+## Context and cost
+
+Every turn re-reads the whole context, and the context keeps the reasoning of all earlier turns as well as what was read and written; measured on the Krylov pilots, an agent's own reasoning was most of its context, so cost grows roughly with the square of the number of turns.
+
+- Work in few, large turns: read each input once (several in one call), write a whole file in one Write and fix with Edit, run all checks of a step in one command.
+- Keep tool output short: long output to a log file under `build/`, then `tail`/`grep` it; never print data arrays. Wait once for a long run instead of polling.
+- Look at images only where `check` points, each once.
+- A note longer than a few sections: split it into phases done by fresh agents that hand over through files (verify → results files, write, polish on Sonnet), as the live-series skill describes. Writers stay at the default reasoning effort; low effort was cheaper but shallower in a blind comparison.
+- Start such a run from a fresh, short session: a long session pays its full size on every turn.
 
 ## Series (overview + companion notes)
 
