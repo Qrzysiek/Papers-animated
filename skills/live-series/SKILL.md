@@ -14,7 +14,8 @@ front matter, and link to each other. The toolkit is at `C:\Users\qrzys\Document
 that context keeps not only what was read and written but also the reasoning of all earlier turns. Measured in the
 Krylov pilots (2026-11-24): in a 63-turn verify agent the context grew from 36 k (base) to 231 k tokens, of which tool
 results were 15 k and its own file writes 24 k; the rest was its own earlier reasoning. So an agent's cost grows
-roughly with the square of its turns, and a long session costs about its size on every turn. Hence:
+roughly with the square of its turns, and a long session costs about its size on every turn. (The full record of
+the pilots, with setups, prompts and per-agent costs, is `docs/pilots-2026-11/README.md` in the toolkit repo.) Hence:
 
 - **Orchestrate from a fresh, short session.** In pilot 2, 24 orchestrator turns in a session already 540 k deep cost
   12 M tokens, a third of the whole note. If this session already holds earlier work, tell the user and suggest
