@@ -204,7 +204,7 @@ test('charts and diagrams from specs; the figure lint finds labels that stick ou
   const c = await browserMod.checkPaper(r.file, path.join(OUT, 'charts', 'check'), { interact: true });
   assert.deepEqual(c.consoleErrors, []);
   assert.deepEqual(c.report.errors, []);
-  assert.equal(c.report.figures, 4);
+  assert.equal(c.report.figures, 5);   // spread, lanczos, flow, panels (two plot boxes in one chart), bad
   const errs = (c.interaction.find(x => x.errors) || {}).errors || [];
   assert.deepEqual(errs, [], 'stepping through the chart scenes draws without errors');
   const lint = c.lint.figures;

@@ -186,6 +186,8 @@ export default LP.chart({
 | `step`, `until` | appears in step `s`, or builds up over `[a, b]`; hidden after `until`. Lines are drawn along x (`reveal: 'draw'`), points appear one by one (`'seq'`), anything can `'fade'`. `stops: [x1, 'max', …]` ends each step of a multi-step line at that x |
 | `label`, `labelAt` | legend entry; with `labelAt: 'end' \| 'start' \| 'max' \| x` the label sits on the curve instead (`dx`, `dy`, `anchor`) |
 | `hlines`, `vlines`, `marks`, `text` | reference lines; points (`at: 'max:<key>' \| 'min:…' \| 'last:…'` or `x`, `y`) with labels; free labels in data coordinates (`coords: 'px'` for viewBox units) |
+| `title` | a short heading centred above the plot box (useful for panels) |
+| `panels[]`, `cols`, `layout`, `sharex`, `sharey` | several plot boxes in one figure: each panel is a chart spec (`series`, `x`, `y`, `hlines`, `marks`, `legend`, `title`, `box`, …) and inherits `data`, `size`, `grid`, `arrows`, `x`, `y` from the chart. Default one row; `cols: k` makes a grid, `layout: 'col'` a stack. `sharex` labels the x axis only on the bottom panel of each column, `sharey` the y axis only in the left column. Steps count across all panels |
 | `params`, `y: P => key`, `when: P => bool` | sliders and selects as in modules; a series can switch dataset key or hide by parameter |
 | `draw(svg, kit, S, P)`, `update(state, f, S)` | escape hatch for one extra element |
 

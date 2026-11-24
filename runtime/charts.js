@@ -64,22 +64,11 @@ function niceTicks(a, b, n = 5) {
 const numFmt = v => String(+(+v).toPrecision(6));
 
 /* ---------------------------------------------------------------- LP.chart */
-LP.chart = (spec) => {
-  const W = (spec.viewBox || [0, 0, 760, 440])[2], H = (spec.viewBox || [0, 0, 760, 440])[3];
-  const size = spec.size || 16;
-  const items = spec.series || [];
-  let maxStep = 1;
-  const touch = s => { const r = stepRange(s); maxStep = Math.max(maxStep, r[1]); };
-  items.forEach(s => { touch(s.step); if (s.until) touch(s.until); });
-  ['hlines', 'vlines', 'marks', 'text'].forEach(k => (spec[k] || []).forEach(o => touch(o.step)));
-  const def = {
-    viewBox: spec.viewBox || [0, 0, 760, 440],
-    steps: spec.steps || (maxStep > 1 ? Array.from({ length: maxStep }, (_, i) => 'step ' + (i + 1)) : undefined),
-    snap: spec.snap, dur: spec.dur, params: spec.params, lint: spec.lint,
-  };
-  def.setup = (svg, kit, P) => {
+/* one plot box (bx) with its axes, reference lines, series, marks, texts and legend; spec is a chart or one panel */
+function chartSetup(spec, svg, kit, P, bx) {
+    const size = spec.size || 16;
+    const items = spec.series || [];
     const base = lookup(spec.data);
-    const bx = Object.assign({ x: 90, y: 40, w: W - 130, h: H - 120 }, spec.box || {});
     const ax = (o, other) => {
       o = o || {};
       const log = !!o.log;
@@ -257,10 +246,11 @@ LP.chart = (spec) => {
         t.legendRow = g;
       });
     }
+    if (spec.title) label(svg, bx.x + bx.w / 2, bx.y - 14, spec.title, { size, anchor: 'middle', valign: 'bottom' });
     if (spec.draw) S.custom = spec.draw(svg, kit, S, P) || {};
     return S;
-  };
-  def.render = (S, f) => {
+}
+function chartRender(spec, S, f) {
     const P = f.P || S.P;
     S.parts.concat(S.marks, S.texts).forEach(p => {
       const [lo, hi] = stepRange(p.o.step);
@@ -297,6 +287,53 @@ LP.chart = (spec) => {
       if (t.lab) opacity(t.lab, v >= 1 ? 1 : reveal === 'fade' ? v : kit.clamp(v * 4 - 3, 0, 1));
       if (t.legendRow) opacity(t.legendRow, kit.clamp(v * 3, 0, 1));
     });
+    if (S.custom && spec.update) spec.update(S.custom, f, S);
+}
+
+/* LP.chart(spec): one plot box, or with panels: [spec, ...] several in a grid of the viewBox (cols; default one row,
+   layout: 'col' stacks them). Each panel is a chart spec (series, x, y, hlines, marks, legend, title, box, ...) and
+   inherits data, size, grid, arrows, x and y from the chart. sharex: only the bottom panel of each column labels
+   its x axis; sharey: only the left column labels y. Steps count across all panels. */
+const PANEL_INHERIT = ['data', 'size', 'grid', 'arrows', 'x', 'y'];
+LP.chart = (spec) => {
+  const vb = spec.viewBox || [0, 0, 760, 440], W = vb[2], H = vb[3];
+  let panels = null;
+  if (spec.panels) {
+    const n = spec.panels.length;
+    const cols = spec.cols || (spec.layout === 'col' ? 1 : n), rows = Math.ceil(n / cols);
+    const cw = W / cols, ch = H / rows;
+    panels = spec.panels.map((p, i) => {
+      const q = Object.assign({}, p);
+      PANEL_INHERIT.forEach(k => { if (q[k] === undefined && spec[k] !== undefined) q[k] = spec[k]; });
+      const c = i % cols, r = Math.floor(i / cols);
+      const hideX = !!spec.sharex && i + cols < n, hideY = !!spec.sharey && c > 0;
+      if (hideX) q.x = Object.assign({}, q.x, { fmt: 'none', label: undefined });
+      if (hideY) q.y = Object.assign({}, q.y, { fmt: 'none', label: undefined });
+      const ml = hideY ? 30 : 90, mb = hideX ? 30 : 80, mt = 50, mr = 40;   // mt: room for a $TeX$ y label above the box
+      q.box = Object.assign({ x: c * cw + ml, y: r * ch + mt, w: cw - ml - mr, h: ch - mt - mb }, p.box || {});
+      return q;
+    });
+  }
+  let maxStep = 1;
+  const touch = s => { const r = stepRange(s); maxStep = Math.max(maxStep, r[1]); };
+  (panels || [spec]).forEach(p => {
+    (p.series || []).forEach(s => { touch(s.step); if (s.until) touch(s.until); });
+    ['hlines', 'vlines', 'marks', 'text'].forEach(k => (p[k] || []).forEach(o => touch(o.step)));
+  });
+  const def = {
+    viewBox: vb,
+    steps: spec.steps || (maxStep > 1 ? Array.from({ length: maxStep }, (_, i) => 'step ' + (i + 1)) : undefined),
+    snap: spec.snap, dur: spec.dur, params: spec.params, lint: spec.lint,
+  };
+  def.setup = (svg, kit, P) => {
+    if (!panels) return chartSetup(spec, svg, kit, P, Object.assign({ x: 90, y: 40, w: W - 130, h: H - 120 }, spec.box || {}));
+    const S = { P, panels: panels.map(p => chartSetup(p, svg, kit, P, p.box)) };
+    if (spec.draw) S.custom = spec.draw(svg, kit, S, P) || {};
+    return S;
+  };
+  def.render = (S, f) => {
+    if (!panels) return chartRender(spec, S, f);
+    S.panels.forEach((ps, i) => chartRender(panels[i], ps, f));
     if (S.custom && spec.update) spec.update(S.custom, f, S);
   };
   return def;
