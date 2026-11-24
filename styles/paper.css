@@ -44,7 +44,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .lp-bar button[aria-pressed="true"]{background:var(--bar-ink);color:var(--bar)}
 .lp-bar :focus-visible{outline:2px solid var(--bar-ink);outline-offset:1px}
 .lp-bar input[type=range]{width:140px;accent-color:var(--bar-ink)}
-.lp-bar .where{min-width:0;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+/* a fixed width: a longer step label must not make the bar wrap, which would shift the whole page */
+.lp-bar .where{flex:0 1 280px;width:280px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-variant-numeric:tabular-nums;color:var(--bar-ink)}
 .lp-bar .dim{color:var(--bar-dim)}
 .lp-bar .pg{font-variant-numeric:tabular-nums;min-width:62px;text-align:center}
@@ -57,6 +58,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .lp-stage{padding-block:18px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px))}
 .lp-pages{display:flex;flex-direction:column;align-items:center;gap:22px;width:max-content;margin:0 auto}
+/* WebKit: pages typeset at scale 1 and scaled by a transform inside a wrapper sized to the result (ui.js, legacyZoom) */
+.lp-zoomwrap{margin:0 auto;overflow:hidden}
+.lp-zoomwrap > .lp-pages{margin:0;transform-origin:0 0}
 .lp-busy{font:13px var(--sans);color:var(--paper);text-align:center;padding:40px 0;opacity:.85}
 
 /* ------------------------------------------------------------ the sheet */
@@ -328,6 +332,8 @@ html.bare-fig .lp-fig figcaption,html.bare-fig .lp-ctrl{display:none}
   body::before,.lp-bar{display:none}
   .lp-stage{padding:0}
   .lp-pages{zoom:1 !important;gap:0}
+  .lp-zoomwrap{width:auto !important;height:auto !important;overflow:visible !important}
+  .lp-zoomwrap > .lp-pages{transform:none !important}
   .sheet{box-shadow:none;break-after:page}
   .lp-ctrl{display:none}
 }

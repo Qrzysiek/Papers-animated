@@ -31,9 +31,35 @@ function targetZoom() {
   const z = z0 === '1' ? 1 : z0 === 'page' ? Math.min(zw, zp) : Math.min(zw, 1.75);
   return +Math.max(0.3, z).toFixed(3);
 }
+/* WebKit (Safari, every iOS browser) implements CSS zoom the old way: inside a zoomed element it reports element
+   boxes and event coordinates in unzoomed units, with offsets that depend on where the element sits, so tooltips
+   opened far from their links. There the pages are typeset at scale 1 and shown with a transform, which every
+   engine measures correctly. Detected once: a zoom-2 box reports a 100 px child as 100 px wide (others: 200). */
+let legacy = null;
+function legacyZoom() {
+  if (legacy !== null) return legacy;
+  try {
+    const o = document.createElement('div');
+    o.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;zoom:2';
+    const i = document.createElement('div');
+    i.style.cssText = 'width:100px;height:10px';
+    o.appendChild(i); document.body.appendChild(o);
+    const w = i.getBoundingClientRect().width;
+    o.remove();
+    legacy = Math.abs(w - 100) < 1;
+  } catch (e) { legacy = false; }
+  return legacy;
+}
+function scalePages(z) {
+  const wrap = pagesEl.parentNode;
+  pagesEl.style.transform = z === 1 ? '' : 'scale(' + z + ')';
+  wrap.style.width = pagesEl.offsetWidth * z + 'px';
+  wrap.style.height = pagesEl.offsetHeight * z + 'px';
+}
 function applyZoom() {
   if (!pagesEl) return;
   const z = targetZoom();
+  if (legacyZoom()) { scalePages(z); return; }   // typeset at 1, nothing to refit
   pagesEl.style.zoom = z;
   // typeset again if the new zoom makes a column overflow (keeping the page)
   if (mode === 'paper' && z !== layoutZoom) {
@@ -54,9 +80,12 @@ function repaginate() {
    until now; so stage it, let the browser fetch the faces it needs (KaTeX's included), then measure. */
 function fontsSettled(ms = 3000) {
   try {
-    ['KaTeX_Main', 'KaTeX_Math', 'KaTeX_AMS', 'KaTeX_Size1', 'KaTeX_Size2', 'KaTeX_Size3', 'KaTeX_Size4'].forEach(f => document.fonts.load('16px ' + f));
-    ['italic 16px KaTeX_Math', 'bold 16px KaTeX_Main', 'italic 16px KaTeX_Main'].forEach(f => document.fonts.load(f));
-    return Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, ms))]);
+    // wait for these loads themselves: WebKit resolves fonts.ready before they start, so without this the first
+    // layout is measured with fallback glyphs and its columns overflow once KaTeX's faces arrive
+    const loads = ['KaTeX_Main', 'KaTeX_Math', 'KaTeX_AMS', 'KaTeX_Size1', 'KaTeX_Size2', 'KaTeX_Size3', 'KaTeX_Size4'].map(f => '16px ' + f)
+      .concat(['italic 16px KaTeX_Math', 'bold 16px KaTeX_Main', 'italic 16px KaTeX_Main'])
+      .map(f => document.fonts.load(f).catch(() => null));
+    return Promise.race([Promise.all(loads).then(() => document.fonts.ready), new Promise(r => setTimeout(r, ms))]);
   } catch (e) { return Promise.resolve(); }
 }
 let renderToken = 0, fontsReady = false;
@@ -84,9 +113,17 @@ async function render(m) {
     staging.remove();   // detached: moving blocks out of it no longer triggers document layout
     pagesEl = document.createElement('div');
     pagesEl.className = 'lp-pages';
-    stage.appendChild(pagesEl);
-    layoutZoom = targetZoom();
-    pagesEl.style.zoom = layoutZoom;
+    if (legacyZoom()) {   // WebKit: scaled by a transform inside a wrapper sized to the scaled pages (see applyZoom)
+      const wrap = document.createElement('div');
+      wrap.className = 'lp-zoomwrap';
+      stage.appendChild(wrap);
+      wrap.appendChild(pagesEl);
+      layoutZoom = 1;
+    } else {
+      stage.appendChild(pagesEl);
+      layoutZoom = targetZoom();
+      pagesEl.style.zoom = layoutZoom;
+    }
     layout = LP.layoutPaper(src, pagesEl);
   } else {
     stage.textContent = '';
@@ -159,10 +196,13 @@ function seriesMenu() {
   const nav = document.createElement('nav');
   nav.setAttribute('aria-label', 'Notes in this series');
   if (S.title) { const h = document.createElement('span'); h.className = 'hd'; h.textContent = S.title; nav.appendChild(h); }
-  Object.entries(S.notes).forEach(([id, n]) => {
+  // hub navigation (build.mjs, "menu": "hub"): the hub comes first and stands for the whole series
+  const ids = Object.keys(S.notes).sort((a, b) => (b === S.hub) - (a === S.hub));
+  ids.map(id => [id, S.notes[id]]).forEach(([id, n]) => {
     let e;
+    const tail = id === S.hub && S.self !== S.hub ? ' · all notes ↗' : ' ↗';
     if (id === S.self) { e = document.createElement('span'); e.className = 'cur'; e.textContent = n.title + ' (this note)'; }
-    else if (n.href) { e = document.createElement('a'); e.href = n.href; e.target = '_blank'; e.rel = 'noopener'; e.textContent = n.title + ' ↗'; }
+    else if (n.href) { e = document.createElement('a'); e.href = n.href; e.target = '_blank'; e.rel = 'noopener'; e.textContent = n.title + tail; }
     else { e = document.createElement('span'); e.className = 'planned'; e.textContent = n.title + ' · planned'; }
     nav.appendChild(e);
   });
@@ -255,9 +295,15 @@ function wireLinks() {
   document.body.appendChild(tip);
   let owner = null;          // the link or bibliography entry the open tooltip belongs to
   let lastPtr = 'mouse';     // pointer type of the latest press; a keyboard 'click' counts as a mouse one
-  addEventListener('pointerdown', e => { lastPtr = e.pointerType || 'mouse'; }, true);
+  let lastTouch = -1e9;      // time of the latest touch or pen press
+  addEventListener('pointerdown', e => { lastPtr = e.pointerType || 'mouse'; if (lastPtr !== 'mouse') lastTouch = performance.now(); }, true);
   addEventListener('keydown', () => { lastPtr = 'mouse'; }, true);
   const tapped = () => lastPtr === 'touch' || lastPtr === 'pen';
+  /* Hover previews only for a real mouse. WebKit marks the events that follow a tap as mouse events, and when the
+     page scrolls (a followed link) it sends hover events for the old touch point: an abstract would pop up under
+     the finger. So no hover on touch-only screens, nor within 2 s of a touch. */
+  const hoverOK = e => e.pointerType === 'mouse' && performance.now() - lastTouch > 2000 &&
+    !(window.matchMedia && matchMedia('(hover: none)').matches);
   const hide = () => {
     if (owner && owner.classList && owner.classList.contains('lp-sol-btn')) owner.setAttribute('aria-expanded', 'false');
     tip.hidden = true; tip.classList.remove('lp-tip-touch'); owner = null;
@@ -317,7 +363,7 @@ function wireLinks() {
 
   // mouse hover
   stage.addEventListener('pointerover', e => {
-    if (e.pointerType !== 'mouse') return;
+    if (!hoverOK(e)) return;
     const a = e.target.closest(PREVIEW);
     if (a) { if (a !== owner) showPreview(a, false); return; }
     const ent = e.target.closest('.csl-entry');
@@ -441,11 +487,14 @@ async function boot() {
 LP.render = render;
 /* if a web font arrives after layout and makes a column overflow, typeset again (keeping the page) */
 function watchLateFonts() {
+  const refit = () => { if (mode === 'paper' && columnsOverflow()) repaginate(); };
+  // WebKit does not always fire loadingdone for faces that arrive after the first layout: look again a few times
+  [400, 1500, 4000].forEach(ms => setTimeout(refit, ms));
   if (!document.fonts || !document.fonts.addEventListener) return;
   let t = 0;
   document.fonts.addEventListener('loadingdone', () => {
     clearTimeout(t);
-    t = setTimeout(() => { if (mode === 'paper' && columnsOverflow()) repaginate(); }, 150);
+    t = setTimeout(refit, 150);
   });
 }
 /* for figure modules: scroll to an element of the paper by id (e.g. a section), with a flash */

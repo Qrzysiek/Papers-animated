@@ -11,7 +11,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const FILTER = path.join(ROOT, 'filters', 'livepaper.lua');
 const CSL = path.join(ROOT, 'csl', 'ieee.csl');
 const REFNOTES = path.join(ROOT, 'filters', 'refnotes.lua');   // runs after citeproc: reference summaries + abstracts
-const RUNTIME = ['core.js', 'kit.js', 'paginate.js', 'player.js', 'ui.js'].map(f => path.join(ROOT, 'runtime', f));
+const RUNTIME = ['core.js', 'kit.js', 'charts.js', 'paginate.js', 'player.js', 'ui.js', 'lint.js'].map(f => path.join(ROOT, 'runtime', f));
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
 const unescapeHtml = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
@@ -54,8 +54,24 @@ export function inputs(P) {
   return out;
 }
 
+/* a series may share front matter (macros, author, bibliography, footer) in one file, listed in the registry as
+   "common": "common.md"; it is read before paper.md, so a note's own values win (macros merge key by key).
+   Paths in it are relative to each note's folder (e.g. bibliography: ../refs.json). */
+export function commonFile(P) {
+  const rel = frontScalar(P, 'series');
+  if (!rel) return null;
+  const file = path.resolve(P.dir, rel);
+  if (!fs.existsSync(file)) return null;
+  const S = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!S.common) return null;
+  const c = path.resolve(path.dirname(file), S.common);
+  if (!fs.existsSync(c)) throw new Error('series common file not found: ' + S.common);
+  return c;
+}
+
 function pandoc(P, to, extra = []) {
-  const args = [...inputs(P), '-f', 'markdown', '-t', to, '--standalone', '--lua-filter', FILTER, '--citeproc', '--lua-filter', REFNOTES, '--csl', CSL,
+  const common = commonFile(P);
+  const args = [...(common ? [common] : []), ...inputs(P), '-f', 'markdown', '-t', to, '--standalone', '--lua-filter', FILTER, '--citeproc', '--lua-filter', REFNOTES, '--csl', CSL,
     '-M', 'link-citations=true', '--wrap=none', '--resource-path', P.dir, ...extra];
   const r = run('pandoc', args, { cwd: P.dir });
   const warnings = (r.stderr || '').split(/\r?\n/).filter(Boolean);
@@ -109,8 +125,16 @@ function collectFigures(html, P) {
 function libraries(P, figs) {
   const dirs = new Set([...figs.values()].map(f => path.dirname(f)));
   const libs = [];
-  dirs.forEach(d => { if (fs.existsSync(d)) fs.readdirSync(d).filter(f => /^_.*\.js$/.test(f)).sort().forEach(f => libs.push(path.join(d, f))); });
+  dirs.forEach(d => { if (fs.existsSync(d)) fs.readdirSync(d).filter(f => /^_.*\.(js|json)$/.test(f)).sort().forEach(f => libs.push(path.join(d, f))); });
   return libs;
+}
+/* figures/_name.json -> LP.ds.name (data for LP.chart, written by the project's scripts) */
+function libCode(f) {
+  const text = fs.readFileSync(f, 'utf8');
+  if (!f.endsWith('.json')) return `/* lib: ${path.basename(f)} */\n` + text + '\n';
+  const name = path.basename(f, '.json').replace(/^_/, '');
+  try { JSON.parse(text); } catch (e) { throw new Error('data file ' + path.basename(f) + ' is not valid JSON: ' + e.message); }
+  return `/* data: ${path.basename(f)} */\nLP.ds[${JSON.stringify(name)}]=${text.trim()};\n`;
 }
 function inlineImages(html, P) {
   return html.replace(/<img src="([^"]+)"/g, (m, src) => {
@@ -151,16 +175,29 @@ export function loadSeries(P) {
     notes[id] = { title: n.title || id, local: fwd(path.relative(P.out, target)), url: n.url || null,
       exists: id === self || fs.existsSync(target) };
   }
-  return { title: S.title || '', self, notes };
+  return { title: S.title || '', self, notes, hub: S.hub || null, menu: S.menu || 'all' };
 }
-function seriesVariant(series, variant) {
+/* ids of the notes a page links to: note: links in the text, note: hrefs and LP.noteHref('id') calls in figures */
+export function linkedNotes(html) {
+  const ids = new Set();
+  for (const m of html.matchAll(/note:([\w-]+)/g)) ids.add(m[1]);
+  for (const m of html.matchAll(/noteHref\(\s*['"]([\w-]+)['"]/g)) ids.add(m[1]);
+  return ids;
+}
+/* With "menu": "hub" in the registry, a note other than the hub embeds only the hub, itself and the notes it links to.
+   Adding a note to the series then changes only the hub (and the notes that link to the new one), so only they need
+   republishing. The hub lists every note. */
+function seriesVariant(series, variant, html) {
   if (!series) return null;
   const notes = {};
+  const keep = series.menu === 'hub' && series.hub && series.self !== series.hub
+    ? new Set([series.hub, series.self, ...linkedNotes(html || '')]) : null;
   for (const [id, n] of Object.entries(series.notes)) {
+    if (keep && !keep.has(id)) continue;
     const href = id === series.self ? '' : variant === 'local' ? (n.exists ? n.local : null) : n.url;
     notes[id] = { title: n.title, href };
   }
-  return { title: series.title, self: series.self, notes };
+  return { title: series.title, self: series.self, hub: series.hub || undefined, notes };
 }
 function resolveNoteLinks(html, sv) {
   return html.replace(/<a href="note:([\w-]+)(#[^"]*)?"([^>]*)>([\s\S]*?)<\/a>/g, (m, id, hash, rest, text) => {
@@ -187,13 +224,13 @@ export function buildHtml(paperFile, opts = {}) {
   const figs = collectFigures(html, P);
   const missing = [];
   let figJs = '';
-  for (const f of libraries(P, figs)) figJs += `/* lib: ${path.basename(f)} */\n` + fs.readFileSync(f, 'utf8') + '\n';
+  for (const f of libraries(P, figs)) figJs += libCode(f);
   for (const [name, file] of figs) {
     if (!fs.existsSync(file)) { missing.push(file); continue; }
     figJs += moduleWrap(name, fs.readFileSync(file, 'utf8'));
   }
   const rt = RUNTIME.map(f => fs.readFileSync(f, 'utf8'));
-  const js = [katexJs(), rt[0], rt[1], figJs, rt[2], rt[3], opts.dev ? devClient() : '', rt[4]].join('\n;\n');
+  const js = [katexJs(), rt[0], rt[1], rt[2], figJs, rt[3], rt[4], opts.dev ? devClient() : '', rt[5], rt[6]].join('\n;\n');
   // KaTeX first, so the paper's own sizes for .katex win the cascade
   const css = katexCss() + '\n' + fs.readFileSync(path.join(ROOT, 'styles', 'paper.css'), 'utf8');
   const fonts = opts.webfonts === false ? '' :
@@ -205,7 +242,7 @@ export function buildHtml(paperFile, opts = {}) {
   const [head, body] = html.split('<!--LP:SPLIT-->');
   const series = loadSeries(P);
   const variantBody = v => {
-    const sv = seriesVariant(series, v);
+    const sv = seriesVariant(series, v, html);
     return resolveNoteLinks(body, sv).replace('<!--LP:SERIES-->', () => seriesScript(sv)).trim();
   };
   const full = '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +

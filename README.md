@@ -28,8 +28,11 @@ If the browser is not found, set `LIVEPAPER_BROWSER` to the path of `msedge`/`ch
 | `livepaper build --pdf` | also snapshot figures to `build/snap/*.pdf` and compile `dist/paper.pdf` |
 | `livepaper check [paper.md]` | headless check (see below); exits 1 on problems |
 | `livepaper snap` | re-render figure snapshots only |
+| `livepaper devices [paper.md]` | phone and tablet profiles in WebKit (the engine of every iOS browser) or Chromium: layout, sideways scrolling, taps |
+| `livepaper bib add\|todo\|summaries\|keys <refs.json> …` | verified bibliography entries from arXiv, Crossref and INSPIRE (see "Bibliography") |
+| `livepaper series new\|status\|build\|published …` | scaffold a series, see which notes to rebuild or republish (see "Series of notes") |
 
-Options: `--out <dir>`, `--no-webfonts`, `--port <n>`, `--pages 1,3` (check only).
+Options: `--out <dir>`, `--no-webfonts`, `--port <n>`, `--pages 1,3` (check only), `--engine chromium` and `--device "iPad Mini,iPhone 13"` (devices only).
 
 `check` loads the built page in a headless browser and reports:
 
@@ -37,9 +40,13 @@ Options: `--out <dir>`, `--no-webfonts`, `--port <n>`, `--pages 1,3` (check only
 - unresolved references and missing figure modules;
 - blocks or equations wider than a column, and columns that overflow, measured live after layout;
 - headings stranded at a column bottom;
-- sideways scrolling at phone width.
+- sideways scrolling at phone width;
+- figure labels (in the rest frame) that stick out of the viewBox, overlap another label, or sit on a drawn line or data point. A line hidden under a filled shape painted later (a gate box over its wire) does not count. A figure opts out with `lint: false`, an element with `data-lint="off"`;
+- as notes, not failures: sparse pages, figures placed more than a page after their first mention, figures never referenced.
 
-It writes `build/check/page-NN.png`, `mobile-dark.png` and `report.json`, then plays every scene, moves every slider, and switches mode and theme to catch interaction errors. Look at the PNGs: they are the fastest way to judge a layout.
+It writes `build/check/sheet.png` (every page on one image, pages with problems outlined in red), `page-NN.png`, `lint-<figure>.png` (a sharp crop of each flagged figure with the labels in question boxed), `mobile-dark.png` and `report.json`, then plays every scene, moves every slider, and switches mode and theme to catch interaction errors. Look at `sheet.png` first and open single pages only where it points: one contact sheet costs about a tenth of the page images.
+
+`devices` builds the paper and loads it with the profiles iPad Pro 11 (portrait and landscape), iPad Mini, iPhone 13 and iPhone SE. For each it reports the mode chosen, columns that overflow, sideways scrolling and runtime errors, and taps a citation (preview, then follow), a reference entry (abstract), a solution button and Play. WebKit comes from `npx playwright-core install webkit` in this folder (or set `LIVEPAPER_WEBKIT` to its executable); emulation uses the same engine as Safari on iOS but is not a real device.
 
 ## Authoring
 
@@ -145,6 +152,66 @@ Write `render` so that everything is a function of `f`. Steps before the current
 
 Colours come from CSS classes, so figures follow the theme. Strokes: `ink`, `smid`, `ssoft`, `sfaint`. Fills: `fink`, `fpaper`, `fbox`, `fband`, `fsoft`, `fmid`, `nofill`. Text: `mid`, `soft`, `paper`, `serif`, `it`. `window.LP.jump(id)` scrolls to an element of the paper, which is useful for clickable maps.
 
+### Chart and diagram figures
+
+Most figures are plots of computed data or boxes and arrows. For these a module can be a spec instead of code:
+`LP.chart(spec)` and `LP.diagram(spec)` return an ordinary figure definition, with steps, snapshot step, theme
+classes and the label rules built in.
+
+**Data files.** A file `figures/_<name>.json` next to the figure modules is inlined by the build as `LP.ds.<name>`.
+Let the script that verifies the note's numbers write it, so text, tests and figures share one source.
+
+```js
+// figures/spread.js
+export default LP.chart({
+  steps: ['ramp', 'peak', 'slope and plateau', 'uncorrelated levels'], snap: 4,
+  data: 'kry.spread',                                  // default dataset: LP.ds.kry.spread
+  x: { range: [0.3, 3000], log: true, ticks: [1, 10, 100, 1000], label: 'time t' },
+  y: { range: [0, 0.7], label: 'K(t) / N' },           // ticks: nice ones if omitted
+  hlines: [{ y: 0.5, label: '$\\tfrac12$', lx: 0.4 }],
+  series: [
+    { x: 't', y: 'GUE', style: 'thick', label: 'GUE (chaotic)', step: [1, 3], stops: [30, 'max'] },
+    { x: 't', y: 'Poisson', style: 'dashed', label: 'uncorrelated levels', step: 4 },
+  ],
+  marks: [{ at: 'max:GUE', label: '$\\text{peak } {y:.2f}\\,N$', step: 2, dx: -10, anchor: 'end' }],
+  legend: 'tl',                                        // 'auto' (default) picks the emptiest corner
+});
+```
+
+| Chart field | Meaning |
+|:--|:--|
+| `viewBox`, `box` | default `[0,0,760,440]`; plot box `{x,y,w,h}` (default leaves room for tick labels) |
+| `x`, `y` | `{range, log, ticks, label, fmt}`; `fmt`: function, `'pow10'` ($10^k$), `'pi'` (multiples of π), `'none'` |
+| `series[]` | data: `{x: key, y: key}` (keys into `data` or `LP.ds`, `x` omitted = 1, 2, …), `xy: [[x,y],…]`, or `fn: x => …` with `domain`, `n`. Kind: line (default), `points: true`, `bars: true`, `band: [loKey, hiKey]`. `style`: lines `ink thick thin mid soft dashed dotted ink-dashed faint`, points `dot open mid square` |
+| `step`, `until` | appears in step `s`, or builds up over `[a, b]`; hidden after `until`. Lines are drawn along x (`reveal: 'draw'`), points appear one by one (`'seq'`), anything can `'fade'`. `stops: [x1, 'max', …]` ends each step of a multi-step line at that x |
+| `label`, `labelAt` | legend entry; with `labelAt: 'end' \| 'start' \| 'max' \| x` the label sits on the curve instead (`dx`, `dy`, `anchor`) |
+| `hlines`, `vlines`, `marks`, `text` | reference lines; points (`at: 'max:<key>' \| 'min:…' \| 'last:…'` or `x`, `y`) with labels; free labels in data coordinates (`coords: 'px'` for viewBox units) |
+| `params`, `y: P => key`, `when: P => bool` | sliders and selects as in modules; a series can switch dataset key or hide by parameter |
+| `draw(svg, kit, S, P)`, `update(state, f, S)` | escape hatch for one extra element |
+
+Labels use `$…$` for TeX, otherwise plain text (`\n` breaks lines); `{y:.2f}` in a mark label prints the point's value.
+
+```js
+// figures/flow.js
+export default LP.diagram({
+  viewBox: [0, 0, 760, 300],
+  nodes: [
+    { id: 'h', x: 100, y: 150, w: 150, h: 60, text: 'Hamiltonian', step: 1 },
+    { id: 'k', x: 380, y: 150, tex: '\\{b_n\\}', sub: 'Lanczos', step: 2, fill: 'fband' },
+    { id: 'c', x: 660, y: 150, text: 'complexity', step: 3, href: 'note:krylov#sec-spread' },
+  ],
+  edges: [
+    { from: 'h', to: 'k', label: 'Krylov basis', step: 2 },
+    { from: 'h', to: 'c', bend: 0.25, dashed: true, label: 'Nielsen', step: 3 },
+  ],
+});
+```
+
+Nodes are centred at `x, y` (`w`, `h`, `shape: box|round|circle|plain`, `fill: fbox|fband|fpaper|fink`, `sub` for a
+second, smaller line, `href` to a section or `note:<id>#<anchor>`). Edges attach at the node outlines (`bend` as a
+fraction of their length, `dashed`, `both`, `arrow: false`); labels sit above the edge (`side: 'below'`), and the lint
+reports a label that does not fit between two boxes.
+
 ### URL switches (local files)
 
 `?static` (no animation), `?mode=reflow|paper`, `?theme=light|dark`, `?bare` (no toolbar), `?scene=sc-x&step=2` (freeze), `?fig=<module>&step=3` (one figure alone, used for snapshots). Plain `#ids` (e.g. `#sec-intro`, `#eq-ea`) work everywhere.
@@ -165,12 +232,48 @@ Each paper then joins it in its front matter with `series: ../series.json` and `
 - **A Notes menu** in the toolbar, listing every note in the series. The current note is marked, and planned notes are greyed out.
 - **Links from figures.** `LP.noteHref(id, anchor)` returns the right link for the current build, or `null`. Wrap a node in `kit.link(parent, href)` to make it clickable; links to other notes open in a new tab.
 
+Three optional registry fields make a series cheaper to grow (`livepaper series new` sets all three):
+
+- `"common": "common.md"`: a Markdown file holding only front matter (author, date, footer, `bibliography: ../refs.json`, `macros`). It is read before each note's `paper.md`, so a note's own values win and macros merge key by key. Paths in it are relative to each note's folder.
+- `"hub": "<id>"` and `"menu": "hub"`: a note other than the hub then embeds, and lists in its Notes menu, only the hub ("· all notes"), itself and the notes it links to (from `note:` links in the text and in figures). Adding a note to the series changes only the hub and the notes that link to the new one, so only they need republishing. The hub lists every note.
+
+```sh
+livepaper series new notes --title "My notes" --notes hub:Overview,primer:Primer,a:First topic   # scaffold (first = hub)
+livepaper series status notes/series.json      # per note: write, build, rebuild, publish (new), republish, or ok
+livepaper series build notes/series.json       # rebuild every stale note (--pdf for PDFs too)
+livepaper series published a https://claude.ai/artifact/... notes/series.json   # URL into the registry + hash of the artifact
+```
+
+`series new` also writes `refs.json`, `notation.md` (one symbol table for all notes) and `briefs/<id>.md` (a template
+for the brief a note is written from). `status` calls a note stale when a file in its folder, the common file or
+the bibliography is newer than its build, or when the series block in its built artifact no longer matches the registry
+(a linked note got a URL or a new title). After a rebuild, `republish` appears only for notes whose `artifact.html`
+differs from the one recorded by `series published`.
+
 Workflow for a new note:
 
-1. Add it to the registry with `"url": null`.
-2. Build and publish it.
-3. Put the URL it was published at into the registry.
-4. Rebuild and republish the notes that link to it.
+1. Add it to the registry with `"url": null` (or scaffold it with `series new` in an empty folder and copy it over).
+2. Build and publish it, then `livepaper series published <id> <url>`.
+3. `livepaper series build`, then `livepaper series status`: republish the notes marked `republish`, and record each with `series published`.
+
+The skill `skills/live-series/SKILL.md` (with `note-agent.md`, the prompt for one note agent) describes how to plan and write a whole series with one fresh agent per note.
+
+## Bibliography
+
+```sh
+livepaper bib add refs.json arXiv:2202.06957 quant-ph/0502070 doi:10.1103/PhysRevX.9.041017 nielsen=quant-ph/0603161
+livepaper bib todo refs.json          # entries without a summary, each with the start of its abstract
+livepaper bib summaries refs.json s.txt   # merge lines "key: summary" into "x-summary"
+livepaper bib keys refs.json          # key, year, first author, title: one line per entry
+```
+
+`add` takes arXiv ids (new or old style, with or without `arXiv:`, abs/pdf URLs) and DOIs, and writes CSL-JSON with
+only what the services return: arXiv for title, authors, date and abstract; Crossref (through the DOI that arXiv or
+INSPIRE give) for the journal, volume, page and year; INSPIRE's publication info when there is no DOI; otherwise a
+preprint entry. Keys are `<first author><year>` with a title word on collisions, or the `key=` you give. The abstract
+is converted to Markdown in which only `$…$` is live; titles keep plain text (a warning names titles that still
+contain TeX). Entries already present (same arXiv id or DOI) are left alone. Requests are spaced to respect the
+services' rate limits.
 
 ## Publishing on claude.ai
 
@@ -185,16 +288,20 @@ Publish `dist/artifact.html`: it has no document skeleton, and fonts, KaTeX and 
   - in HTML it binds inline math to the punctuation after it (`span.lp-nb`, no wrap), because browsers may break a line after the inline-blocks KaTeX produces.
 - A wide figure joins the band at the top of a page only while that page's columns are empty. A wide figure meant to sit under the abstract (`scene=abstract`) must therefore come before the first heading.
 - `src/build.mjs` runs pandoc and prerenders all math with KaTeX. It inlines CSS, fonts, runtime and figure modules into one file, and drives `latexmk`.
-- `runtime/paginate.js` flows the article into fixed sheets. Paragraphs split at word boundaries (KaTeX stays atomic), and lists, environments and reference lists split between items. Figures, tables and algorithms float to the next column. Wide items go to a band at the top of the next page, full figures get their own page, and footnotes go to the foot of their column. Columns are absolutely positioned with CSS containment, so each measurement only re-lays-out one column: a 14-page paper paginates in about 0.2 s. Pages are typeset at the zoom they are shown at, because text breaks into lines slightly differently at other zooms; a resize or zoom change that makes a column overflow typesets again, and printing typesets at zoom 1.
+- `runtime/paginate.js` flows the article into fixed sheets. Paragraphs split at word boundaries (KaTeX stays atomic), and lists, environments and reference lists split between items. Figures, tables and algorithms float to the next column. Wide items go to a band at the top of the next page, full figures get their own page, and footnotes go to the foot of their column. Columns are absolutely positioned with CSS containment, so each measurement only re-lays-out one column: a 14-page paper paginates in about 0.2 s. Pages are typeset at the zoom they are shown at, because text breaks into lines slightly differently at other zooms; a resize or zoom change that makes a column overflow typesets again, and printing typesets at zoom 1. Before the first layout the runtime waits for the KaTeX font loads themselves: WebKit (Safari, every iOS browser) resolves `document.fonts.ready` before those loads start, so pages measured with fallback glyphs overflowed on iPads and on Mac Safari once KaTeX's faces arrived. As a safety net it looks for overflowing columns again 0.4, 1.5 and 4 s after load (WebKit does not always fire `loadingdone`). WebKit also reports `getBoundingClientRect` inside the zoomed page container in unzoomed units (document position / zoom − scroll), which put link previews and abstracts far from their links on iPads; `visualRect` in `runtime/ui.js` detects this (a sheet's reported width against its layout width) and corrects it. A column shortened by a band of wide figures passes a float or block that is too tall for it on to a full column (at most twice) instead of overflowing.
 - `runtime/player.js` gives each scene its own clock; `runtime/ui.js` handles the toolbar, zoom, modes, theme, links, tooltips and the report used by `check`.
+- `runtime/charts.js` turns chart and diagram specs into figure definitions; `runtime/lint.js` measures figure labels and page fill for `check`.
+- `src/bib.mjs`, `src/series.mjs` and `checkDevices` in `src/browser.mjs` implement `bib`, `series` and `devices`.
 
 ## Tests
 
-`npm test` runs four groups of checks:
+`npm test` runs these checks:
 
 - filter output for both formats;
 - the build (single file, fragment, inlining, KaTeX);
 - headless layout of the demo, including phone width and interaction;
-- splitting of long paragraphs across columns and pages.
+- splitting of long paragraphs across columns and pages, headings, zoom, exercises, tooltips on touch screens;
+- chart and diagram specs, and the figure lint on a figure with broken labels;
+- series scaffold, shared front matter, hub navigation, status and publish records; bibliography helpers (offline).
 
 License: MIT. `csl/ieee.csl` is from the Citation Style Language project (CC BY-SA 3.0).

@@ -82,6 +82,10 @@ function Paginator(src, pagesEl) {
   }
   function fits(reserve = 0) { return colBody.offsetHeight + colFoot.offsetHeight + reserve <= cap + 0.5; }
   function colEmpty() { return !colBody.firstElementChild; }
+  /* a column shortened by a band of wide figures (or the masthead): a block too tall for it may fit a full one.
+     Each block may be passed on twice, so a run of short columns cannot defer it forever. */
+  function shortCol() { return !!body && cap < body.clientHeight - 4 * LH; }
+  function passOn(b) { if (!shortCol() || (b.__lpPassed || 0) >= 2) return false; b.__lpPassed = (b.__lpPassed || 0) + 1; return true; }
   function pageFresh() { return colEls && !colEls[0].firstChild.firstElementChild && !colEls[1].firstChild.firstElementChild; }
   function room() { return cap - colBody.offsetHeight - colFoot.offsetHeight; }
   function overflow(b, why) {
@@ -165,7 +169,7 @@ function Paginator(src, pagesEl) {
     const n = notesFor(b);
     if (fits()) return;
     dropNotes(n); b.remove();
-    if (colEmpty()) { colBody.appendChild(b); notesFor(b); overflow(b); return; }
+    if (colEmpty() && !passOn(b)) { colBody.appendChild(b); notesFor(b); overflow(b); return; }
     floats.push(withHeading(b, 'float'));
   }
   function flushFloats() {
@@ -174,7 +178,7 @@ function Paginator(src, pagesEl) {
       colBody.appendChild(b);
       const n = notesFor(b);
       if (fits()) { floats.shift(); continue; }
-      if (colBody.children.length === 1) { floats.shift(); overflow(b); continue; }
+      if (colBody.children.length === 1 && !passOn(b)) { floats.shift(); overflow(b); continue; }
       dropNotes(n); b.remove(); break;
     }
   }
@@ -184,7 +188,7 @@ function Paginator(src, pagesEl) {
     const n = notesFor(b);
     if (fits()) return;
     dropNotes(n); b.remove();
-    if (colEmpty()) { colBody.appendChild(b); notesFor(b); overflow(b); return; }
+    if (colEmpty() && !passOn(b)) { colBody.appendChild(b); notesFor(b); overflow(b); return; }
     advance(); placeAtomic(b);
   }
   function placeHeading(h) {

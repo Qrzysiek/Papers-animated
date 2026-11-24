@@ -12,24 +12,27 @@ The toolkit lives at `C:\Users\qrzys\Documents\Projects\Papers_animated` (README
 1. **Scaffold** in the user's project, e.g. `notes/<topic>/`: run `livepaper new notes/<topic>`. This gives `paper.md`, `refs.bib` and `figures/`. For long notes, list section files under `sections:` in the front matter.
 2. **Get the facts right first.**
    - Derive or check every formula you state. Use the wolfram-engine skill and small Python or pytest scripts in the project, and keep them as `scripts/` with tests.
-   - Verify every reference against arXiv or INSPIRE metadata before citing it. The arXiv API takes `id_list` batches; the Nielsen project's `scripts/arxiv_meta.py`, `inspire_venues.py` and `make_bib.py` do this and emit CSL-JSON.
+   - Verify every reference against arXiv, Crossref or INSPIRE metadata before citing it: `livepaper bib add refs.json arXiv:<id> doi:<doi> ...` writes CSL-JSON from those services only (README, "Bibliography"); `livepaper bib todo` lists entries still without a summary, `livepaper bib summaries` merges "key: summary" lines.
    - Do not cite from memory.
+   - Let the checking script also write the figure data to `figures/_<name>.json` (inlined as `LP.ds.<name>`).
 3. **Write the text** in Pandoc Markdown with the constructs below. Plain, direct prose.
-4. **Write the figure modules**, one per live figure. Use a scene whenever text should follow a figure.
-5. **Build and check:** `livepaper check paper.md`. Fix every reported problem, then **look at** `build/check/page-NN.png` and `mobile-dark.png` with the Read tool. Look for overlapping labels, figures cut off, empty-looking pages, and headings far from their content. Repeat until clean.
+4. **Write the figures**, one module per live figure. Plots and box-and-arrow figures are specs: `export default LP.chart({...})` / `LP.diagram({...})` with data from `LP.ds` (README, "Chart and diagram figures"); write a full module only when no component fits. Use a scene whenever text should follow a figure.
+5. **Build and check:** `livepaper check paper.md`. Fix every reported problem: the report includes figure labels that stick out, overlap or sit on a line. Then **look at** `build/check/sheet.png` (all pages on one image, problem pages outlined) with the Read tool, and open a single `page-NN.png`, `lint-<figure>.png` or `mobile-dark.png` only where the sheet or the report points. Look for figures cut off, empty-looking pages, and headings far from their content. Repeat until clean. For phones and tablets, `livepaper devices paper.md` runs WebKit with iPad and iPhone profiles.
 6. **PDF:** `livepaper build paper.md --pdf`, then render pages with `pdftoppm -r 60 -png dist/paper.pdf build/pdfp` and look at a few. Fix overfull equations by splitting them with `aligned`; LaTeX columns are narrower than the HTML ones.
 7. **Publish** `dist/artifact.html` with the Artifact tool. It is a fragment with no doctype, already artifact-compliant: theme tokens, dark mode, reflow at phone width, and everything inlined. Give the user the link and the paths to `dist/index.html` (offline) and `dist/paper.pdf`.
 
 ## Series (overview + companion notes)
+
+To plan and write a whole series, use the live-series skill (`skills/live-series/SKILL.md` in the toolkit): `livepaper series new` scaffolds the registry with hub navigation, shared front matter (`common.md`) and briefs, and one fresh agent writes each note. For a single note joining an existing series:
 
 When notes belong together, keep a registry `notes/series.json`: `{title, notes: {id: {title, dir, url}}}`. Each paper joins it with `series: ../series.json` and `series-id: <id>` in its front matter. A shared `bibliography: ../refs.json` works well, because citeproc lists only the entries each note cites. Give each CSL-JSON item an `"x-summary"` (two or three lines, written from the abstract) and an `"abstract"`: the summary is printed under the entry and the abstract appears as a tooltip (README, "Reference notes").
 
 - Link between notes with `[text](note:<id>#sec-x)`. This resolves to the local file in `index.html` and to the published URL in `artifact.html` and the PDF; a note that is not yet published is shown as plain text.
 - In figures, `LP.noteHref(id, anchor)` and `kit.link(parent, href)` make clickable nodes, as in the clickable map of the Nielsen overview.
 - After publishing a new note:
-  1. put its URL into the registry;
-  2. rebuild the notes that link to it;
-  3. republish them to the same artifact paths.
+  1. `livepaper series published <id> <url>` (puts the URL into the registry and records the artifact's hash);
+  2. `livepaper series build` rebuilds the notes whose links changed;
+  3. `livepaper series status` marks `republish` only where the artifact changed: republish those to the same artifact paths.
 
   A shared artifact may need the user's confirmation before you update it.
 

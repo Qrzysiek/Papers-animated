@@ -198,3 +198,39 @@ test('tooltips: taps on a touch screen, hover and click with a mouse', { skip: !
     assert.equal((await desk.evaluate(state)).hash, '#ref-ref1', 'a click follows it at once');
   } finally { await browser.close(); }
 });
+
+test('charts and diagrams from specs; the figure lint finds labels that stick out, overlap or sit on a line', { skip: !browserMod && 'no browser' }, async () => {
+  const r = buildHtml(path.join(ROOT, 'test', 'fixtures', 'charts', 'paper.md'), { out: path.join(OUT, 'charts') });
+  const c = await browserMod.checkPaper(r.file, path.join(OUT, 'charts', 'check'), { interact: true });
+  assert.deepEqual(c.consoleErrors, []);
+  assert.deepEqual(c.report.errors, []);
+  assert.equal(c.report.figures, 4);
+  const errs = (c.interaction.find(x => x.errors) || {}).errors || [];
+  assert.deepEqual(errs, [], 'stepping through the chart scenes draws without errors');
+  const lint = c.lint.figures;
+  assert.ok(lint.every(x => x.fig === 'fig-bad'), 'the chart and diagram specs come out clean: ' + JSON.stringify(lint.filter(x => x.fig !== 'fig-bad')));
+  assert.deepEqual(lint.map(x => x.kind).sort(), ['on a line', 'outside', 'overlap']);
+  assert.ok(fs.existsSync(c.sheet), 'contact sheet written');
+});
+
+test('WebKit (iOS engine): columns fit on tablets once the KaTeX fonts have arrived; taps work', async (t) => {
+  const { checkDevices } = await import('../src/browser.mjs');
+  const dir = path.join(OUT, 'webkit');
+  fs.mkdirSync(dir, { recursive: true });
+  const words = ['complexity', 'of', 'a', 'unitary', 'geodesic', 'penalty', 'is', 'the', 'length', 'Hamiltonian', 'curvature', 'at'];
+  const para = k => Array.from({ length: 90 }, (_, i) => words[(i * 7 + k) % words.length] + (i % 6 === 2 ? ` $\\sum_{j}e^{-iH_{${i}}t}\\ket{\\psi_j}$` : '')).join(' ') + '.';
+  fs.writeFileSync(path.join(dir, 'refs.json'), JSON.stringify([{ id: 'ref1', type: 'article-journal', title: 'A paper',
+    author: [{ family: 'Author', given: 'A.' }], 'container-title': 'J. Tests', issued: { 'date-parts': [[2020]] },
+    'x-summary': 'One-line summary.', abstract: 'The full abstract.' }]));
+  // a citation far down the text: below a scrolled, zoomed page WebKit misplaced previews (they must open next to the link)
+  const paras = Array.from({ length: 20 }, (_, k) => para(k) + (k === 9 ? ' As shown in [@ref1].' : ''));
+  fs.writeFileSync(path.join(dir, 'paper.md'), `---\ntitle: WebKit\nbibliography: refs.json\nmacros:\n  ket: '\\left|#1\\right\\rangle'\n---\n\n# One\n\n${paras.join('\n\n')}\n\n# References\n`);
+  const r = buildHtml(path.join(dir, 'paper.md'), { out: path.join(dir, 'dist'), webfonts: false });
+  let res;
+  try { res = await checkDevices(r.file, path.join(dir, 'devices'), { devices: ['iPad Pro 11', 'iPad Pro 11 landscape', 'iPad Mini'] }); }
+  catch (e) { if (/WebKit not found/.test(e.message)) { t.skip('WebKit not installed'); return; } throw e; }
+  for (const d of res) {
+    assert.deepEqual(d.problems, [], d.device);
+    assert.equal(d.taps.previewNearLink, true, d.device + ': preview next to its link');
+  }
+});
